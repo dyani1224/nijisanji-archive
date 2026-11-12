@@ -70,11 +70,11 @@
   --color-ink-2: #4a5160;
   --color-ink-3: #7c8595;
   --color-line: #e4e7ec;
-  --color-accent: #15181d;
+  --color-accent: #4338ca;
   --color-on-accent: #ffffff;
   --color-field: #ffffff;        /* input background */
   --color-line-strong: #b9c0cb;  /* border on hover / focused field */
-  --color-ring: #15181d;         /* focus ring (`:focus-visible`) */
+  --color-ring: #4338ca;         /* focus ring (`:focus-visible`) */
 
   /* --- state colors: text-ok, bg-warn/15, border-danger … — never the only indicator --- */
   --color-ok: #1f7a4d;
