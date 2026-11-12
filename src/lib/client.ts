@@ -1,90 +1,68 @@
 import { useCallback, useEffect, useState } from "react";
-import { supabase } from "./supabase";
+import { modifyArchive, readArchive } from "./localArchive";
+import type { Category, Liver, LiveStatus, StampRecord, VideoRecord } from "./localArchive";
 
-export type Category = "cover" | "karaoke" | "live" | "other";
-export type Liver = { id: number; channel_id: string; name: string; avatar: string; last_fetched: string | null; video_count?: number };
+export type { Category, Liver } from "./localArchive";
+export type Stamp = { id: number; seconds: number; note: string };
 export type VideoItem = {
   id: number; youtube_id: string; liver_id: number; title: string; published_at: string; duration: number;
-  live_status: "none" | "live" | "upcoming"; category: Category; favorite: number;
+  live_status: LiveStatus; category: Category; favorite: number;
   liver_name: string; liver_avatar: string; ts_count: number; has_memo: number;
 };
-export type Stamp = { id: number; seconds: number; note: string };
 export type Filter = { liver?: number; favorite?: boolean; tab?: "song" | "live"; category?: string };
 
 export const CATEGORY_LABEL: Record<Category, string> = { cover: "커버", karaoke: "가라오케", live: "라이브", other: "기타" };
+export const errText = (e: unknown) => e instanceof Error ? e.message : "잠시 뒤 다시 시도해 주세요";
 
-export const errText = (e: unknown) => (e instanceof Error ? e.message : "잠시 뒤 다시 시도해 주세요");
-
-const saveFail = "저장하지 못했어요. 다시 시도해 주세요";
-
-// 결과가 오류면 화면에는 한국어 문장만 보이고, 실제 내용은 콘솔에 남는다.
-function check<T>(res: { data: T | null; error: { message: string } | null }, msg = saveFail): T {
-  if (res.error) {
-    console.error(res.error);
-    throw new Error(msg);
-  }
-  return res.data as T;
-}
-
+/** API는 공개 영상 정보만 돌려준다. 덕질 기록은 서버로 보내지 않는다. */
 async function serverPost<T>(path: string, json: unknown): Promise<T> {
-  const { data } = await supabase.auth.getSession();
-  const token = data.session?.access_token;
-  if (!token) throw new Error("로그인이 필요해요");
-  let r: Response;
+  let response: Response;
   try {
-    r = await fetch(`/api${path}`, {
+    response = await fetch(`/api${path}`, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+      headers: { "content-type": "application/json" },
       body: JSON.stringify(json),
     });
   } catch {
-    throw new Error("네트워크에 연결할 수 없어요");
+    throw new Error("서버에 연결할 수 없어요. 인터넷 연결을 확인해 주세요.");
   }
-  const body = (await r.json().catch(() => ({}))) as T & { error?: string };
-  if (!r.ok) throw new Error(body.error ?? "요청이 실패했어요");
+  const body = (await response.json().catch(() => ({}))) as T & { error?: string };
+  if (!response.ok) throw new Error(body.error ?? "영상 정보를 가져오지 못했어요.");
   return body;
 }
-
-/* --- 계정 ---------------------------------------------------------------- */
-
-export async function signIn(email: string, password: string) {
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) throw new Error("이메일 또는 비밀번호가 맞지 않아요");
-}
-
-export const signOut = () => supabase.auth.signOut();
 
 /* --- 라이버 -------------------------------------------------------------- */
 
 export async function listLivers(): Promise<Liver[]> {
-  const rows = check(
-    await supabase.from("livers").select("id, channel_id, name, avatar, last_fetched, videos(id)").order("name"),
-    "라이버 목록을 불러오지 못했어요",
-  ) as (Liver & { videos: { id: number }[] })[];
-  return rows.map(({ videos, ...l }) => ({ ...l, video_count: videos.length }));
+  const data = await readArchive();
+  const counts = new Map<number, number>();
+  for (const video of data.videos) counts.set(video.liver_id, (counts.get(video.liver_id) ?? 0) + 1);
+  return data.livers.map(l => ({ ...l, video_count: counts.get(l.id) ?? 0 }))
+    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
 }
 
 export async function getLiver(id: number): Promise<Liver> {
-  const row = check(
-    await supabase.from("livers").select("id, channel_id, name, avatar, last_fetched").eq("id", id).maybeSingle(),
-    "라이버 정보를 불러오지 못했어요",
-  );
-  if (!row) throw new Error("없는 라이버예요");
-  return row as Liver;
+  const data = await readArchive();
+  const liver = data.livers.find(l => l.id === id);
+  if (!liver) throw new Error("없는 라이버예요");
+  return { ...liver };
 }
 
 export async function addLiver(url: string) {
   const info = await serverPost<{ channelId: string; name: string; avatar: string }>("/resolve", { url });
-  const dup = check(await supabase.from("livers").select("id").eq("channel_id", info.channelId).maybeSingle());
-  if (dup) throw new Error("이미 등록된 라이버예요");
-  const row = check(
-    await supabase.from("livers").insert({ channel_id: info.channelId, name: info.name, avatar: info.avatar }).select("id, channel_id, name, avatar, last_fetched").single(),
-    "등록하지 못했어요",
-  ) as Liver;
+  const row = await modifyArchive<Liver>(archive => {
+    if (archive.livers.some(l => l.channel_id === info.channelId)) throw new Error("이미 등록된 라이버예요");
+    const next: Liver = {
+      id: archive.nextId.liver++, channel_id: info.channelId, name: info.name,
+      avatar: info.avatar, last_fetched: null,
+    };
+    archive.livers.push(next);
+    return next;
+  });
   let added = 0;
   let warning = "";
   try {
-    added = (await serverPost<{ added: number }>("/sync", { liverId: row.id, pages: 2 })).added;
+    added = (await refreshOne(row, 2));
   } catch (e) {
     warning = errText(e);
   }
@@ -92,15 +70,59 @@ export async function addLiver(url: string) {
 }
 
 export async function deleteLiver(id: number) {
-  check(await supabase.from("livers").delete().eq("id", id), "삭제하지 못했어요");
+  await modifyArchive(archive => {
+    const target = new Set(archive.videos.filter(v => v.liver_id === id).map(v => v.id));
+    archive.livers = archive.livers.filter(l => l.id !== id);
+    archive.videos = archive.videos.filter(v => v.liver_id !== id);
+    archive.timestamps = archive.timestamps.filter(s => !target.has(s.video_id));
+  });
 }
 
-/** 라이버를 차례로 새로 고친다. 한 번에 하나씩 보내 서버 호출 한도를 넘지 않게 한다. */
+type FetchedVideo = {
+  youtubeId: string; title: string; publishedAt: string; duration: number;
+  liveStatus: LiveStatus; category: Category;
+};
+
+async function refreshOne(liver: Liver, pages: 1 | 2 = 1): Promise<number> {
+  const result = await serverPost<{ videos: FetchedVideo[] }>("/sync", { channelId: liver.channel_id, pages });
+  if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
+  return modifyArchive(archive => {
+    const stored = archive.livers.find(l => l.id === liver.id);
+    if (!stored) return 0; // 불러오는 도중 이 라이버가 삭제된 경우
+    const known = new Map(archive.videos.filter(v => v.liver_id === liver.id).map(v => [v.youtube_id, v]));
+    let added = 0;
+    for (const item of result.videos) {
+      if (!item.youtubeId || !item.title || Number.isNaN(Date.parse(item.publishedAt))) continue;
+      const old = known.get(item.youtubeId);
+      if (old) {
+        old.title = item.title;
+        old.published_at = item.publishedAt;
+        old.duration = item.duration;
+        old.live_status = item.liveStatus;
+        if (!old.category_manual) old.category = item.category;
+      } else {
+        const fresh: VideoRecord = {
+          id: archive.nextId.video++, youtube_id: item.youtubeId, liver_id: liver.id,
+          title: item.title, published_at: item.publishedAt, duration: item.duration,
+          live_status: item.liveStatus, category: item.category, category_manual: false,
+          favorite: false, memo: "",
+        };
+        archive.videos.push(fresh);
+        known.set(item.youtubeId, fresh);
+        added++;
+      }
+    }
+    stored.last_fetched = new Date().toISOString();
+    return added;
+  });
+}
+
+/** 라이버를 차례로 새로 고친다. API 한도를 넘지 않도록 한 번에 한 명씩. */
 export async function refreshLivers(livers: Liver[], onProgress?: (done: number, total: number) => void) {
   let added = 0;
   const failed: string[] = [];
   for (let i = 0; i < livers.length; i++) {
-    try { added += (await serverPost<{ added: number }>("/sync", { liverId: livers[i].id, pages: 1 })).added; }
+    try { added += await refreshOne(livers[i]); }
     catch { failed.push(livers[i].name); }
     onProgress?.(i + 1, livers.length);
   }
@@ -109,66 +131,83 @@ export async function refreshLivers(livers: Liver[], onProgress?: (done: number,
 
 /* --- 영상 ---------------------------------------------------------------- */
 
-const LIST_SELECT = "id, youtube_id, liver_id, title, published_at, duration, live_status, category, favorite, memo, livers!inner(name, avatar), timestamps(id)";
-
 export async function listVideos(f: Filter, offset = 0, limit = 40): Promise<{ rows: VideoItem[]; more: boolean }> {
-  let q = supabase.from("videos").select(LIST_SELECT);
-  if (f.liver) q = q.eq("liver_id", f.liver);
-  if (f.favorite) q = q.eq("favorite", true);
-  if (f.category) q = q.eq("category", f.category);
-  else if (f.tab === "song") q = q.in("category", ["cover", "karaoke"]);
-  else if (f.tab === "live") q = q.in("category", ["live", "other"]);
-  const res = check(
-    await q.order("published_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit),
-    "영상 목록을 불러오지 못했어요",
-  ) as unknown as Array<Record<string, any>>;
-  const rows: VideoItem[] = res.slice(0, limit).map(r => ({
-    id: r.id, youtube_id: r.youtube_id, liver_id: r.liver_id, title: r.title, published_at: r.published_at,
-    duration: r.duration, live_status: r.live_status, category: r.category, favorite: r.favorite ? 1 : 0,
-    liver_name: r.livers.name, liver_avatar: r.livers.avatar, ts_count: r.timestamps.length, has_memo: r.memo ? 1 : 0,
-  }));
-  return { rows, more: res.length > limit };
+  const archive = await readArchive();
+  const livers = new Map(archive.livers.map(l => [l.id, l]));
+  const stampCounts = new Map<number, number>();
+  for (const s of archive.timestamps) stampCounts.set(s.video_id, (stampCounts.get(s.video_id) ?? 0) + 1);
+  const filtered = archive.videos.filter(v => {
+    if (f.liver && v.liver_id !== f.liver) return false;
+    if (f.favorite && !v.favorite) return false;
+    if (f.category && v.category !== f.category) return false;
+    if (!f.category && f.tab === "song" && !["cover", "karaoke"].includes(v.category)) return false;
+    if (!f.category && f.tab === "live" && !["live", "other"].includes(v.category)) return false;
+    return true;
+  }).sort((a, b) => b.published_at.localeCompare(a.published_at) || b.id - a.id);
+  const subset = filtered.slice(offset, offset + limit);
+  const rows = subset.map(v => {
+    const liver = livers.get(v.liver_id);
+    return {
+      id: v.id, youtube_id: v.youtube_id, liver_id: v.liver_id, title: v.title,
+      published_at: v.published_at, duration: v.duration, live_status: v.live_status,
+      category: v.category, favorite: v.favorite ? 1 : 0,
+      liver_name: liver?.name ?? "", liver_avatar: liver?.avatar ?? "",
+      ts_count: stampCounts.get(v.id) ?? 0, has_memo: v.memo ? 1 : 0,
+    };
+  });
+  return { rows, more: filtered.length > offset + limit };
 }
 
 export async function getVideo(id: number) {
-  const r = check(
-    await supabase.from("videos").select("id, youtube_id, liver_id, title, published_at, category, favorite, memo, livers(name, avatar)").eq("id", id).maybeSingle(),
-    "영상 정보를 불러오지 못했어요",
-  ) as Record<string, any> | null;
-  if (!r) throw new Error("없는 영상이에요");
-  const stamps = check(await supabase.from("timestamps").select("id, seconds, note").eq("video_id", id).order("seconds").order("id")) as Stamp[];
+  const data = await readArchive();
+  const video = data.videos.find(v => v.id === id);
+  if (!video) throw new Error("없는 영상이에요");
+  const liver = data.livers.find(l => l.id === video.liver_id);
+  const stamps: Stamp[] = data.timestamps.filter(s => s.video_id === id)
+    .sort((a, b) => a.seconds - b.seconds || a.id - b.id)
+    .map(s => ({ id: s.id, seconds: s.seconds, note: s.note }));
   return {
     row: {
-      id: r.id as number, youtube_id: r.youtube_id as string, liver_id: r.liver_id as number, title: r.title as string,
-      published_at: r.published_at as string, category: r.category as Category, favorite: r.favorite ? 1 : 0,
-      memo: r.memo as string, liver_name: r.livers.name as string, liver_avatar: r.livers.avatar as string,
+      id: video.id, youtube_id: video.youtube_id, liver_id: video.liver_id,
+      title: video.title, published_at: video.published_at, category: video.category,
+      favorite: video.favorite ? 1 : 0, memo: video.memo,
+      liver_name: liver?.name ?? "", liver_avatar: liver?.avatar ?? "",
     },
     timestamps: stamps,
   };
 }
 
 export async function updateVideo(id: number, patch: { category?: Category; favorite?: boolean; memo?: string }) {
-  const body: Record<string, unknown> = {};
-  if (patch.category) { body.category = patch.category; body.category_manual = true; }
-  if (patch.favorite !== undefined) body.favorite = patch.favorite;
-  if (patch.memo !== undefined) body.memo = patch.memo.slice(0, 20000);
-  check(await supabase.from("videos").update(body).eq("id", id));
+  await modifyArchive(archive => {
+    const video = archive.videos.find(v => v.id === id);
+    if (!video) throw new Error("없는 영상이에요");
+    if (patch.category !== undefined) { video.category = patch.category; video.category_manual = true; }
+    if (patch.favorite !== undefined) video.favorite = patch.favorite;
+    if (patch.memo !== undefined) video.memo = patch.memo.slice(0, 20000);
+  });
 }
 
 /* --- 타임스탬프 ---------------------------------------------------------- */
 
 export async function createStamp(videoId: number, seconds: number, note: string): Promise<Stamp> {
-  return check(
-    await supabase.from("timestamps").insert({ video_id: videoId, seconds, note: note.slice(0, 500) }).select("id, seconds, note").single(),
-  ) as Stamp;
+  return modifyArchive(archive => {
+    if (!archive.videos.some(v => v.id === videoId)) throw new Error("없는 영상이에요");
+    const row: StampRecord = { id: archive.nextId.stamp++, video_id: videoId, seconds, note: note.slice(0, 500) };
+    archive.timestamps.push(row);
+    return { id: row.id, seconds: row.seconds, note: row.note };
+  });
 }
 
 export async function updateStamp(id: number, note: string) {
-  check(await supabase.from("timestamps").update({ note: note.slice(0, 500) }).eq("id", id));
+  await modifyArchive(archive => {
+    const stamp = archive.timestamps.find(s => s.id === id);
+    if (!stamp) throw new Error("없는 타임스탬프예요");
+    stamp.note = note.slice(0, 500);
+  });
 }
 
 export async function deleteStamp(id: number) {
-  check(await supabase.from("timestamps").delete().eq("id", id));
+  await modifyArchive(archive => { archive.timestamps = archive.timestamps.filter(s => s.id !== id); });
 }
 
 /* --- 화면용 훅 ----------------------------------------------------------- */
@@ -202,7 +241,7 @@ export function useVideos(f: Filter, reloadKey = 0) {
     let live = true;
     setLoading(true);
     listVideos(JSON.parse(key) as Filter)
-      .then(d => { if (live) { setRows(d.rows); setMore(d.more); setError(""); } })
+      .then(d => { if (live) { setRows(d.rows); setMore(d.more); setError(""); })
       .catch(e => { if (live) setError(errText(e)); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
@@ -218,9 +257,9 @@ export function useVideos(f: Filter, reloadKey = 0) {
   };
   const toggleFavorite = async (v: VideoItem) => {
     const next = !v.favorite;
-    setRows(r => r.map(x => (x.id === v.id ? { ...x, favorite: next ? 1 : 0 } : x)));
+    setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: next ? 1 : 0 } : x));
     try { await updateVideo(v.id, { favorite: next }); }
-    catch (e) { setRows(r => r.map(x => (x.id === v.id ? { ...x, favorite: v.favorite } : x))); setError(errText(e)); }
+    catch (e) { setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: v.favorite } : x)); setError(errText(e)); }
   };
   return { rows, more, loading, error, loadMore, toggleFavorite };
 }
