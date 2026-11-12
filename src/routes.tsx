@@ -4,6 +4,7 @@ import Favorites from "./pages/Favorites";
 import Home from "./pages/Home";
 import LiverDetail from "./pages/LiverDetail";
 import Livers from "./pages/Livers";
+import Settings from "./pages/Settings";
 import VideoDetail from "./pages/VideoDetail";
 
 export const routes: RouteObject[] = [
@@ -14,6 +15,7 @@ export const routes: RouteObject[] = [
       { path: "/livers", element: <Livers /> },
       { path: "/livers/:id", element: <LiverDetail /> },
       { path: "/favorites", element: <Favorites /> },
+      { path: "/settings", element: <Settings /> },
       { path: "/video/:id", element: <VideoDetail /> },
       { path: "*", element: <Home /> },
     ],
