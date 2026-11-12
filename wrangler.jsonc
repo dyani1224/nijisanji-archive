@@ -1,0 +1,10 @@
+// Worker(/api) + 정적 화면(dist) + D1. BAZE 관리형 배포는 main·assets·d1·vars 만 읽는다.
+// 크론(triggers)은 쓰지 않는다: 보존 기한 같은 일은 읽고 쓸 때 처리한다.
+{
+  "name": "baze-template",
+  "main": "worker/index.ts",
+  "compatibility_date": "2025-10-01",
+  "assets": { "directory": "dist", "binding": "ASSETS", "not_found_handling": "single-page-application", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "app", "database_id": "local" }],
+  "vars": {}
+}

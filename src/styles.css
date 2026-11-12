@@ -1,0 +1,302 @@
+@import "tailwindcss";
+
+/*
+  BAZE base tokens (base-2026-11-09). Every token is a CSS custom property declared once in
+  `@theme static`, so Tailwind utilities (font-display, text-step-3, bg-ground, text-ink,
+  leading-body, tracking-display …) and plain CSS (var(--step-3)) read the same value, and
+  `static` keeps every variable in the output even before a utility uses it. A template
+  changes a token in ONE place — usually `--font-display` and the color block — and never
+  redefines the scale.
+
+  Type:   two families per template. Body stays Pretendard; `--font-display` is the second
+          family (load it in index.html, see the comment there). `--font-mono` only for code/data.
+  Scale:  --step--1 … --step-6 are fluid between 375 px and 1440 px. --display-md / --display-lg
+          are the 56→128 px and 72→200 px headline sizes the rebuild brief allows.
+  Ground: light tokens by default; `[data-ground="dark"]` on <body>, a <section> or any wrapper
+          swaps the whole set, including the +weight/+tracking/+leading compensation for
+          light-on-dark text. A `hard-cut` page alternates sections carrying that attribute.
+  Motion: .reveal / .reveal-stagger run on `animation-timeline: view()`; browsers without it
+          get an IntersectionObserver fallback from src/lib/reveal.ts (installed by App.tsx).
+          prefers-reduced-motion turns every non-essential motion off at the bottom of this file.
+*/
+
+@theme static {
+  /* --- families ------------------------------------------------------------------ */
+  --font-body: "Pretendard Variable", Pretendard, -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif;
+  --font-display: var(--font-body);
+  --font-mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: var(--font-body);
+
+  /* --- fluid type scale (375 → 1440 px, ratio 1.2 → 1.25) ------------------------ */
+  --step--1: clamp(0.85rem, 0.832rem + 0.075vw, 0.9rem);
+  --step-0: clamp(1rem, 0.956rem + 0.188vw, 1.125rem);
+  --step-1: clamp(1.156rem, 1.068rem + 0.376vw, 1.406rem);
+  --step-2: clamp(1.35rem, 1.207rem + 0.61vw, 1.756rem);
+  --step-3: clamp(1.575rem, 1.355rem + 0.939vw, 2.2rem);
+  --step-4: clamp(1.85rem, 1.533rem + 1.352vw, 2.75rem);
+  --step-5: clamp(2.175rem, 1.73rem + 1.897vw, 3.438rem);
+  --step-6: clamp(2.563rem, 1.953rem + 2.601vw, 4.294rem);
+  --display-md: clamp(3.5rem, 1.915rem + 6.761vw, 8rem);
+  --display-lg: clamp(4.5rem, 1.683rem + 12.019vw, 12.5rem);
+  --text-step--1: var(--step--1);
+  --text-step-0: var(--step-0);
+  --text-step-1: var(--step-1);
+  --text-step-2: var(--step-2);
+  --text-step-3: var(--step-3);
+  --text-step-4: var(--step-4);
+  --text-step-5: var(--step-5);
+  --text-step-6: var(--step-6);
+  --text-display-md: var(--display-md);
+  --text-display-lg: var(--display-lg);
+
+  /* line-height inverse to size; tracking tightens as size grows */
+  --leading-display: 0.92;
+  --leading-heading: 1.15;
+  --leading-body: 1.7;
+  --tracking-display: -0.035em;
+  --tracking-heading: -0.02em;
+  --tracking-body: 0em;
+  --tracking-caps: 0.12em;
+  --weight-display: 600;
+  --weight-body: 400;
+  --measure: 65ch; /* body measure 45–75ch */
+
+  /* --- ground colors: bg-ground, bg-ground-2, bg-surface, text-ink, text-ink-2, text-ink-3,
+         border-line, bg-accent, text-on-accent ----------------------------------------- */
+  --color-ground: #ffffff;
+  --color-ground-2: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-ink: #15181d;
+  --color-ink-2: #4a5160;
+  --color-ink-3: #7c8595;
+  --color-line: #e4e7ec;
+  --color-accent: #15181d;
+  --color-on-accent: #ffffff;
+  --color-field: #ffffff;        /* input background */
+  --color-line-strong: #b9c0cb;  /* border on hover / focused field */
+  --color-ring: #15181d;         /* focus ring (`:focus-visible`) */
+
+  /* --- state colors: text-ok, bg-warn/15, border-danger … — never the only indicator --- */
+  --color-ok: #1f7a4d;
+  --color-warn: #a86b12;
+  --color-danger: #b42318;
+  --color-info: #1d5fb8;
+  --color-on-state: #ffffff;
+
+  /* --- elevation: shadow-1 … shadow-3, rounded-control / rounded-card / rounded-media --- */
+  --shadow-1: 0 1px 2px rgb(21 24 29 / 0.06), 0 1px 1px rgb(21 24 29 / 0.04);
+  --shadow-2: 0 4px 12px rgb(21 24 29 / 0.08), 0 1px 3px rgb(21 24 29 / 0.06);
+  --shadow-3: 0 16px 40px rgb(21 24 29 / 0.14), 0 2px 6px rgb(21 24 29 / 0.06);
+  --radius-control: 6px;
+  --radius-card: 12px;
+  --radius-media: 4px;
+
+  /* --- density: h-control, py-section, px-gutter, max-w-page -------------------------- */
+  --spacing-control: 44px;       /* touch target; --spacing-control-sm for dense owner tables */
+  --spacing-control-sm: 36px;
+  --spacing-section: clamp(4rem, 2.5rem + 6.4vw, 10rem);   /* 64 → 160 px between acts */
+  --spacing-gutter: clamp(1rem, 0.1rem + 3.9vw, 3.5rem);   /* 16 → 56 px side padding */
+  --container-page: 1440px;
+
+  /* --- motion ---------------------------------------------------------------------- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+  --duration-reveal: 0.8s;
+}
+
+:root { color-scheme: light; }
+
+/* Dark ground: set on <body> for a dark page, on a <section> for a hard cut. */
+[data-ground="dark"] {
+  --color-ground: #0b0d10;
+  --color-ground-2: #121519;
+  --color-surface: #171b21;
+  --color-ink: #f2f3f5;
+  --color-ink-2: #b4bac6;
+  --color-ink-3: #7f8794;
+  --color-line: #262b33;
+  --color-accent: #f2f3f5;
+  --color-on-accent: #0b0d10;
+  --color-field: #121519;
+  --color-line-strong: #3d4552;
+  --color-ring: #f2f3f5;
+  --color-ok: #4cc38a;
+  --color-warn: #e0a84a;
+  --color-danger: #f0665c;
+  --color-info: #6ea8ff;
+  --color-on-state: #0b0d10;
+  /* dark surfaces separate by border and tone, not shadow */
+  --shadow-1: 0 0 0 1px rgb(255 255 255 / 0.04);
+  --shadow-2: 0 0 0 1px rgb(255 255 255 / 0.06), 0 8px 24px rgb(0 0 0 / 0.5);
+  --shadow-3: 0 0 0 1px rgb(255 255 255 / 0.08), 0 24px 60px rgb(0 0 0 / 0.65);
+  /* light-on-dark compensation */
+  --weight-body: 430;
+  --tracking-body: 0.006em;
+  --leading-body: 1.75;
+  --tracking-display: -0.025em;
+  color-scheme: dark;
+}
+[data-ground="light"] {
+  --color-ground: #ffffff;
+  --color-ground-2: #f4f5f7;
+  --color-surface: #ffffff;
+  --color-ink: #15181d;
+  --color-ink-2: #4a5160;
+  --color-ink-3: #7c8595;
+  --color-line: #e4e7ec;
+  --color-accent: #15181d;
+  --color-on-accent: #ffffff;
+  --color-field: #ffffff;
+  --color-line-strong: #b9c0cb;
+  --color-ring: #15181d;
+  --color-ok: #1f7a4d;
+  --color-warn: #a86b12;
+  --color-danger: #b42318;
+  --color-info: #1d5fb8;
+  --color-on-state: #ffffff;
+  --shadow-1: 0 1px 2px rgb(21 24 29 / 0.06), 0 1px 1px rgb(21 24 29 / 0.04);
+  --shadow-2: 0 4px 12px rgb(21 24 29 / 0.08), 0 1px 3px rgb(21 24 29 / 0.06);
+  --shadow-3: 0 16px 40px rgb(21 24 29 / 0.14), 0 2px 6px rgb(21 24 29 / 0.06);
+  --weight-body: 400;
+  --tracking-body: 0em;
+  --leading-body: 1.7;
+  --tracking-display: -0.035em;
+  color-scheme: light;
+}
+[data-ground] {
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-weight: var(--weight-body);
+  letter-spacing: var(--tracking-body);
+  line-height: var(--leading-body);
+}
+
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--step-0);
+  font-weight: var(--weight-body);
+  line-height: var(--leading-body);
+  letter-spacing: var(--tracking-body);
+  background: var(--color-ground);
+  color: var(--color-ink);
+  word-break: keep-all;
+  -webkit-font-smoothing: antialiased;
+}
+:focus-visible { outline: 2px solid var(--color-ring); outline-offset: 2px; }
+code, kbd, pre, samp, .mono { font-family: var(--font-mono); }
+/* Field defaults from the density + field tokens; checkbox/radio/range/file/color keep native size. */
+:is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"]), select, textarea) {
+  background: var(--color-field); color: var(--color-ink); border: 1px solid var(--color-line);
+  border-radius: var(--radius-control); min-height: var(--spacing-control);
+}
+:is(input, select, textarea):hover { border-color: var(--color-line-strong); }
+:is(input, select, textarea):focus-visible { border-color: var(--color-line-strong); outline-offset: 0; }
+::placeholder { color: var(--color-ink-3); }
+
+/* --- type helpers (plain classes; Tailwind utilities cover the rest) ------------------- */
+.display {
+  font-family: var(--font-display);
+  font-size: var(--display-md);
+  font-weight: var(--weight-display);
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+}
+.display-lg { font-size: var(--display-lg); }
+.measure { max-inline-size: var(--measure); }
+.caps { font-size: var(--step--1); letter-spacing: var(--tracking-caps); text-transform: uppercase; }
+.tnum { font-variant-numeric: tabular-nums; }
+/* Elevation that follows the ground: Tailwind's shadow-1/2/3 inline the light value, so a surface
+   that can sit on [data-ground="dark"] uses .elev-* (or `box-shadow: var(--shadow-2)` in CSS). */
+.elev-1 { box-shadow: var(--shadow-1); }
+.elev-2 { box-shadow: var(--shadow-2); }
+.elev-3 { box-shadow: var(--shadow-3); }
+
+/* --- motion ------------------------------------------------------------------------------
+   .reveal              one entrance per section: fades + rises as it enters the viewport
+   .reveal-stagger      children reveal in order (up to 8 — set --i yourself beyond that)
+   .reveal-fade / .reveal-scale  variants on the same timeline
+   .scrub-view          scrub ANY animation you declare by the element's own viewport entry
+   .scrub-root          scrub by document scroll (progress bars, parallax, image sequences)
+   .parallax            drifts by --parallax (default 12vh) while it crosses the viewport
+   .pin-track / .pin-stage   a tall track whose child stays pinned for --pin-steps screens
+   .scroll-progress     a 2 px bar that fills with document scroll
+   Fallback: src/lib/reveal.ts adds .is-inview via IntersectionObserver and sets
+   html[data-reveal="observer"]; the no-JS, no-support path keeps everything visible. */
+@keyframes reveal-up   { from { opacity: 0; translate: 0 var(--reveal-y, 28px); } to { opacity: 1; translate: 0 0; } }
+@keyframes reveal-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes reveal-scale { from { opacity: 0; scale: 0.96; } to { opacity: 1; scale: 1; } }
+@keyframes scrub-fill  { from { scale: 0 1; } to { scale: 1 1; } }
+@keyframes parallax-y  { from { translate: 0 var(--parallax, 12vh); } to { translate: 0 calc(var(--parallax, 12vh) * -1); } }
+
+.reveal-stagger > :nth-child(2) { --i: 1; }
+.reveal-stagger > :nth-child(3) { --i: 2; }
+.reveal-stagger > :nth-child(4) { --i: 3; }
+.reveal-stagger > :nth-child(5) { --i: 4; }
+.reveal-stagger > :nth-child(6) { --i: 5; }
+.reveal-stagger > :nth-child(7) { --i: 6; }
+.reveal-stagger > :nth-child(n + 8) { --i: 7; }
+
+@media (prefers-reduced-motion: no-preference) {
+  @supports (animation-timeline: view()) {
+    .reveal, .reveal-stagger > * {
+      animation: reveal-up linear both;
+      animation-timeline: view();
+      animation-range: entry calc(5% + var(--i, 0) * 6%) entry calc(45% + var(--i, 0) * 6%);
+    }
+    .reveal-fade, .reveal-fade.reveal-stagger > * { animation-name: reveal-fade; }
+    .reveal-scale, .reveal-scale.reveal-stagger > * { animation-name: reveal-scale; }
+    .scrub-view { animation-timeline: view(); animation-fill-mode: both; animation-timing-function: linear; }
+    .scrub-root { animation-timeline: scroll(root); animation-fill-mode: both; animation-timing-function: linear; }
+    .scroll-progress { animation: scrub-fill linear both; animation-timeline: scroll(root); }
+    .parallax { animation: parallax-y linear both; animation-timeline: view(); }
+  }
+  @supports not (animation-timeline: view()) {
+    .reveal, .reveal-stagger > * {
+      transition: opacity var(--duration-reveal) var(--ease-out-expo), translate var(--duration-reveal) var(--ease-out-expo), scale var(--duration-reveal) var(--ease-out-expo);
+      transition-delay: calc(var(--i, 0) * 70ms);
+    }
+    html[data-reveal="observer"] :is(.reveal, .reveal-stagger > *):not(.is-inview) { opacity: 0; translate: 0 var(--reveal-y, 28px); }
+    html[data-reveal="observer"] :is(.reveal-fade, .reveal-fade.reveal-stagger > *):not(.is-inview) { translate: 0 0; }
+    html[data-reveal="observer"] :is(.reveal-scale, .reveal-scale.reveal-stagger > *):not(.is-inview) { translate: 0 0; scale: 0.96; }
+    /* .scroll-progress and .scrub-* read --progress (0–1) from trackScrollProgress() in reveal.ts */
+    .scroll-progress { scale: var(--progress, 0) 1; }
+  }
+}
+.scroll-progress { position: fixed; inset: 0 0 auto 0; height: 2px; background: var(--color-accent); transform-origin: 0 50%; z-index: 50; pointer-events: none; }
+.pin-track { position: relative; height: calc(var(--pin-steps, 3) * 100vh); height: calc(var(--pin-steps, 3) * 100dvh); }
+.pin-stage { position: sticky; top: 0; height: 100vh; height: 100dvh; overflow: hidden; }
+
+/* View Transitions for route changes (react-router <Link viewTransition>). */
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.28s; animation-timing-function: var(--ease-in-out-quart); }
+
+/* Every interactive element answers hover and focus; templates refine, never remove. */
+a, button, [role="button"], summary { transition: color 0.18s, background-color 0.18s, border-color 0.18s, opacity 0.18s, translate 0.18s; }
+
+/* --- reduced motion: everything non-essential off, final states kept ------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    animation-timeline: auto !important;
+    transition-duration: 0.01ms !important;
+    transition-delay: 0ms !important;
+    scroll-behavior: auto !important;
+  }
+  .reveal, .reveal-stagger > *, .parallax { opacity: 1 !important; translate: none !important; scale: none !important; }
+  .scroll-progress { display: none; }
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}
+
+/* --- owner screens (src/owner/) -------------------------------------------------------
+   The drawer is a bottom sheet below 900 px and a right panel above; both slide once on open. */
+@keyframes owner-sheet-up { from { translate: 0 100%; } }
+@keyframes owner-panel-in { from { translate: 100% 0; } }
+@keyframes owner-fade-in { from { opacity: 0; } }
+@media (prefers-reduced-motion: no-preference) {
+  .owner-sheet { animation: owner-sheet-up 0.32s var(--ease-out-expo); }
+  .owner-fade { animation: owner-fade-in 0.2s ease-out; }
+  @media (min-width: 900px) { .owner-sheet { animation-name: owner-panel-in; } }
+}

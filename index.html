@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>BAZE 템플릿</title>
+    <meta name="description" content="" />
+    <meta property="og:title" content="BAZE 템플릿" />
+    <meta property="og:description" content="" />
+    <meta property="og:image" content="/og.jpg" />
+    <!-- Body face: Pretendard Variable, always. -->
+    <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css" />
+    <!--
+      Second family (display / serif), exactly one per template. Two ways:
+
+      A. Google Fonts (OFL): keep the two preconnects below and add ONE stylesheet link with
+         display=swap and only the weights you use, e.g.
+         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@300;400&display=swap" />
+         Korean: Noto Serif KR · Gowun Batang · Nanum Myeongjo · Hahmlet · Song Myung · Black Han Sans ·
+         Do Hyeon · Gothic A1 · IBM Plex Sans KR · Bagel Fat One · Gugi
+         Latin display for wordmarks / numerals: Inter Tight · Instrument Serif · Space Grotesk ·
+         Bebas Neue · Anton · JetBrains Mono · IBM Plex Mono
+
+      B. Self-hosted: put the woff2 under public/fonts/ with its license file beside it, declare
+         @font-face in src/styles.css with font-display: swap, and delete the two preconnects.
+
+      Then point the token at it in src/styles.css:
+         @theme static { --font-display: "Noto Serif KR", var(--font-body); }
+      and use it through `font-display` / `.display` only. check.mjs fails the build if a
+      declared family never loads, so the token must name a face this page actually links.
+    -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
