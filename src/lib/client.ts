@@ -241,7 +241,7 @@ export function useVideos(f: Filter, reloadKey = 0) {
     let live = true;
     setLoading(true);
     listVideos(JSON.parse(key) as Filter)
-      .then(d => { if (live) { setRows(d.rows); setMore(d.more); setError(""); })
+      .then(d => { if (live) { setRows(d.rows); setMore(d.more); setError(""); } })
       .catch(e => { if (live) setError(errText(e)); })
       .finally(() => { if (live) setLoading(false); });
     return () => { live = false; };
