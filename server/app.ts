@@ -31,7 +31,7 @@ app.post("/sync", async c => {
   if (!/^UC[\w-]{22}$/.test(channelId)) {
     return c.json({ error: "올바른 유튜브 채널이 아니에요" }, 400);
   }
-  const pages = b.pages === 2 ? 2 : 1;
+  const pages = typeof b.pages === "number" && b.pages > 0 ? Math.min(b.pages, 100) : 0;
   try {
     const videos = await fetchVideos(channelId, process.env.YOUTUBE_API_KEY || undefined, pages);
     return c.json({ videos });
