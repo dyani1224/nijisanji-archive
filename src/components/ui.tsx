@@ -3,23 +3,41 @@ import { Link } from "react-router";
 import { ago, clock } from "../lib/format";
 import { CATEGORY_LABEL, type Category, type VideoItem } from "../lib/client";
 
-const BADGE: Record<Category, string> = {
+const BADGE: Record<Exclude<Category, "none">, string> = {
   song: "bg-emerald-50 text-emerald-800",
   live: "bg-sky-50 text-sky-800",
-  other: "bg-ground-2 text-ink-2",
+  shorts: "bg-purple-50 text-purple-800",
+  kirinuki: "bg-amber-50 text-amber-800",
 };
 
-export const CategoryBadge = ({ value }: { value: Category }) => (
-  <span className={`inline-block rounded px-1.5 py-0.5 text-xs font-medium ${BADGE[value]}`}>{CATEGORY_LABEL[value]}</span>
-);
+export const CategoryBadge = ({ value }: { value: Category }) => {
+  if (value === "none") return null;
+  return (
+    <span className={`inline-block shrink-0 rounded px-1.5 py-0.5 text-xs font-medium ${BADGE[value]}`}>
+      {CATEGORY_LABEL[value]}
+    </span>
+  );
+};
 
 export const thumbUrl = (id: string) => `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
 
-export function Avatar({ src, name, size = 32 }: { src: string; name: string; size?: number }) {
-  return src ? (
-    <img src={src} alt="" width={size} height={size} loading="lazy" referrerPolicy="no-referrer" className="shrink-0 rounded-full bg-ground-2 object-cover" style={{ width: size, height: size }} />
-  ) : (
-    <span aria-hidden className="grid shrink-0 place-items-center rounded-full bg-ground-2 text-xs font-semibold text-ink-2" style={{ width: size, height: size }}>{name.slice(0, 1)}</span>
+export function Avatar({ src, name, size = 32, isLive = false }: { src: string; name: string; size?: number; isLive?: boolean }) {
+  return (
+    <span className="relative inline-flex shrink-0" style={{ width: size, height: size }}>
+      {src ? (
+        <img src={src} alt="" width={size} height={size} loading="lazy" referrerPolicy="no-referrer" className="h-full w-full rounded-full bg-ground-2 object-cover" />
+      ) : (
+        <span aria-hidden className="grid h-full w-full place-items-center rounded-full bg-ground-2 text-xs font-semibold text-ink-2">
+          {name.slice(0, 1)}
+        </span>
+      )}
+      {isLive && (
+        <span
+          title="라이브 중"
+          className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-ground bg-rose-600"
+        />
+      )}
+    </span>
   );
 }
 
@@ -45,12 +63,20 @@ export function Chips<T extends string>({ value, options, onChange }: { value: T
 }
 
 export function VideoRow({ v, showLiver = true, onFavorite }: { v: VideoItem; showLiver?: boolean; onFavorite: (v: VideoItem) => void }) {
-  const status = v.live_status === "live" ? "라이브 중" : v.live_status === "upcoming" ? "예정" : "";
+  const isLiveNow = v.live_status === "live";
+  const isUpcoming = v.live_status === "upcoming";
   return (
     <li className="flex gap-3 py-3">
       <Link to={`/video/${v.id}`} className="relative block w-[42%] max-w-[180px] shrink-0 self-start">
         <img src={thumbUrl(v.youtube_id)} alt="" loading="lazy" className="aspect-video w-full rounded-media bg-ground-2 object-cover" />
-        {v.duration > 0 && <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1 text-[11px] text-white">{clock(v.duration)}</span>}
+        {isLiveNow ? (
+          <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+            <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-white" />
+            라이브 중
+          </span>
+        ) : v.duration > 0 ? (
+          <span className="absolute bottom-1 right-1 rounded bg-black/75 px-1 text-[11px] text-white">{clock(v.duration)}</span>
+        ) : null}
       </Link>
       <div className="flex min-w-0 flex-1 flex-col">
         <Link to={`/video/${v.id}`} className="line-clamp-2 text-[15px] font-medium leading-snug text-ink [word-break:keep-all]">{v.title}</Link>
@@ -61,8 +87,13 @@ export function VideoRow({ v, showLiver = true, onFavorite }: { v: VideoItem; sh
           </Link>
         )}
         <div className="mt-auto flex items-center gap-2 pt-1.5 text-xs text-ink-3">
+          {isLiveNow && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+              라이브 중
+            </span>
+          )}
           <CategoryBadge value={v.category} />
-          {status && <span className="font-medium text-rose-600">{status}</span>}
+          {isUpcoming && <span className="font-medium text-sky-600">예정</span>}
           <span>{ago(v.published_at)}</span>
           {(v.ts_count > 0 || v.has_memo > 0) && (
             <span className="truncate">{[v.ts_count > 0 && `타임스탬프 ${v.ts_count}`, v.has_memo > 0 && "메모"].filter(Boolean).join(" ")}</span>
