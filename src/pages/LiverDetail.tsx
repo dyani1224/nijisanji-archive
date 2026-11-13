@@ -62,6 +62,7 @@ function calcElapsedDays(raw?: string): string {
 
 type InlineField =
   | null
+  | "names"
   | "birthday"
   | "oshi_mark"
   | "fan_name"
@@ -79,15 +80,18 @@ export default function LiverDetail() {
   /* 인라인 바로 입력 상태 */
   const [activeField, setActiveField] = useState<InlineField>(null);
   const [draft, setDraft] = useState("");
+  const [draftKo, setDraftKo] = useState("");
 
-  const startInline = (field: Exclude<InlineField, null>, initialValue = "") => {
+  const startInline = (field: Exclude<InlineField, null>, initialValue = "", initialKo = "") => {
     setActiveField(field);
     setDraft(initialValue);
+    setDraftKo(initialKo);
   };
 
   const cancelInline = () => {
     setActiveField(null);
     setDraft("");
+    setDraftKo("");
   };
 
   const saveQuick = async (patch: Parameters<typeof updateLiverProfile>[1]) => {
@@ -96,6 +100,7 @@ export default function LiverDetail() {
       await updateLiverProfile(liver.id, patch);
       setActiveField(null);
       setDraft("");
+      setDraftKo("");
       reload();
     } catch (e) {
       setStatus(errText(e));
@@ -224,25 +229,68 @@ export default function LiverDetail() {
               : undefined
           }
         >
-          {/* 1. 상단 프로필 사진 + 일본 이름 / 한국 이름 */}
+          {/* 1. 상단 프로필 사진 + 일본 이름 / 한국 이름 (클릭 시 바로 수정) */}
           <div className="flex items-center gap-4">
             <span
-              className="inline-flex shrink-0 rounded-full p-0.5"
+              className="inline-flex shrink-0 items-center justify-center rounded-full p-0.5"
               style={themeHex ? { border: `2.5px solid ${themeHex}` } : undefined}
             >
               <Avatar src={liver.avatar} name={nameJa} size={76} isLive={liver.is_live} />
             </span>
-            <div className="min-w-0 flex-1">
-              <div className="flex items-center gap-2">
-                <h2 className="truncate text-xl font-bold text-ink">{nameJa}</h2>
-                {liver.is_live && (
-                  <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                    라이브 중
-                  </span>
-                )}
+
+            {activeField === "names" ? (
+              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-xl border-2 border-accent bg-ground p-2.5">
+                <div className="min-w-0 flex-1 space-y-1.5">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") saveQuick({ name_ja: draft, name_ko: draftKo });
+                      if (e.key === "Escape") cancelInline();
+                    }}
+                    aria-label="일본 이름"
+                    className="h-8 w-full rounded border border-line bg-field px-2 text-base font-bold text-ink focus:outline-none"
+                  />
+                  <input
+                    type="text"
+                    value={draftKo}
+                    onChange={e => setDraftKo(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") saveQuick({ name_ja: draft, name_ko: draftKo });
+                      if (e.key === "Escape") cancelInline();
+                    }}
+                    aria-label="한국 이름"
+                    className="h-7 w-full rounded border border-line bg-field px-2 text-xs text-ink-2 focus:outline-none"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => saveQuick({ name_ja: draft, name_ko: draftKo })}
+                  aria-label="이름 저장"
+                  className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-accent text-on-accent"
+                >
+                  <Check size={16} />
+                </button>
               </div>
-              {nameKo && <p className="mt-0.5 truncate text-sm text-ink-2">{nameKo}</p>}
-            </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startInline("names", nameJa, nameKo)}
+                className="min-w-0 flex-1 rounded-xl px-1.5 py-1 text-left transition hover:bg-ground-2/60"
+              >
+                <div className="flex items-center gap-2">
+                  <h2 className="truncate text-xl font-bold text-ink">{nameJa}</h2>
+                  {liver.is_live && (
+                    <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                      라이브 중
+                    </span>
+                  )}
+                </div>
+                {nameKo && <p className="mt-0.5 truncate text-sm text-ink-2">{nameKo}</p>}
+              </button>
+            )}
           </div>
 
           {/* 2. 생일 / 데뷔일 / 입덕일 / 멤버십 4칸 (클릭 시 바로 설정) */}
@@ -261,7 +309,6 @@ export default function LiverDetail() {
                       if (e.key === "Enter") saveQuick({ birthday: draft });
                       if (e.key === "Escape") cancelInline();
                     }}
-                    placeholder="11.10"
                     maxLength={10}
                     className="h-7 min-w-0 flex-1 rounded border border-line bg-field px-1.5 text-center text-xs font-semibold"
                   />
@@ -371,7 +418,6 @@ export default function LiverDetail() {
                     if (e.key === "Enter") saveQuick({ oshi_mark: draft });
                     if (e.key === "Escape") cancelInline();
                   }}
-                  placeholder="예: 🎲"
                   className="h-8 min-w-0 flex-1 bg-transparent text-right text-sm font-medium text-ink focus:outline-none"
                 />
                 <button
@@ -407,7 +453,6 @@ export default function LiverDetail() {
                     if (e.key === "Enter") saveQuick({ fan_name: draft });
                     if (e.key === "Escape") cancelInline();
                   }}
-                  placeholder="팬네임 입력"
                   className="h-8 min-w-0 flex-1 bg-transparent text-right text-sm font-medium text-ink focus:outline-none"
                 />
                 <button
@@ -456,7 +501,6 @@ export default function LiverDetail() {
                     }
                     if (e.key === "Escape") cancelInline();
                   }}
-                  placeholder="#FF0000"
                   maxLength={10}
                   className="h-8 min-w-0 flex-1 bg-transparent text-right text-sm font-medium uppercase text-ink focus:outline-none"
                 />
@@ -562,7 +606,7 @@ export default function LiverDetail() {
               );
             })}
 
-            {/* 트위터가 아직 하나도 등록되지 않았을 때만 등록 칸 표시 */}
+            {/* 트위터가 아직 등록되지 않았을 때만 등록 칸 표시 */}
             {twitters.length === 0 && (
               activeField === "twitter_add" ? (
                 <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3">
@@ -580,7 +624,6 @@ export default function LiverDetail() {
                       }
                       if (e.key === "Escape") cancelInline();
                     }}
-                    placeholder="https://x.com/... 또는 @아이디"
                     className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink focus:outline-none"
                   />
                   <button
@@ -625,7 +668,6 @@ export default function LiverDetail() {
                     }
                     if (e.key === "Escape") cancelInline();
                   }}
-                  placeholder="https://wikiwiki.jp/nijisanji/..."
                   className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink focus:outline-none"
                 />
                 <button
