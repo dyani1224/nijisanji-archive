@@ -1,10 +1,13 @@
-/**
- * 로그인 없이 이 브라우저에만 기록을 보관하는 IndexedDB 저장소.
- * 백업 파일의 형태는 별도의 버전으로 관리해서 다른 기기로 옮길 수 있다.
- */
-import { classify, type Category } from "../../shared/category";
-export type { Category } from "../../shared/category";
+import { classify, type Category, type YtVideoType } from "../../shared/category";
+export type { Category, YtVideoType } from "../../shared/category";
 export type LiveStatus = "none" | "live" | "upcoming";
+
+export type ChannelPlaylist = {
+  id: string;
+  title: string;
+  thumbnail: string;
+  itemCount: number;
+};
 
 export type Liver = {
   id: number;
@@ -13,6 +16,8 @@ export type Liver = {
   avatar: string;
   last_fetched: string | null;
   video_count?: number;
+  is_live?: boolean;
+  playlists?: ChannelPlaylist[];
 };
 
 export type VideoRecord = {
@@ -23,6 +28,7 @@ export type VideoRecord = {
   published_at: string;
   duration: number;
   live_status: LiveStatus;
+  yt_type?: YtVideoType;
   category: Category;
   category_manual: boolean;
   favorite: boolean;
@@ -48,14 +54,27 @@ const emptyArchive = (): Archive => ({
   nextId: { liver: 1, video: 1, stamp: 1 },
 });
 
-/** 예전 커버·가라오케와 미분류 영상에 현재 제목 기준을 적용한다. 수동 지정은 유지한다. */
 function normalizeCategories(data: Archive): boolean {
   let changed = false;
   for (const video of data.videos) {
-    const storedCategory = video.category as string; // 이전 백업에는 두 분류가 남아 있을 수 있다.
-    const next = storedCategory === "cover" || storedCategory === "karaoke" ? "song"
-      : video.category_manual ? video.category
-      : classify(video.title, video.category === "live" || video.live_status !== "none", false);
+    const storedCategory = video.category as string;
+    const isLive = video.live_status !== "none" || video.yt_type === "live" || storedCategory === "live";
+    const isShorts = video.yt_type === "shorts" || storedCategory === "shorts" || (!isLive && video.duration > 0 && video.duration <= 180 && /#shorts/i.test(video.title));
+
+    if (!video.yt_type) {
+      video.yt_type = isLive ? "live" : isShorts ? "shorts" : "video";
+      changed = true;
+    }
+
+    let next: Category;
+    if (video.category_manual) {
+      next = (storedCategory === "other" ? "none"
+        : storedCategory === "cover" || storedCategory === "karaoke" ? "song"
+        : storedCategory) as Category;
+    } else {
+      next = classify(video.title, isLive, isShorts);
+    }
+
     if (next !== video.category) {
       video.category = next;
       changed = true;
@@ -89,7 +108,6 @@ function openDatabase(): Promise<IDBDatabase> {
   return pendingDB!;
 }
 
-/** 데이터 전부를 한 번에 읽는다. 객체를 수정해도 저장소에는 바로 반영되지 않는다. */
 export async function readArchive(): Promise<Archive> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
@@ -107,11 +125,6 @@ export async function readArchive(): Promise<Archive> {
   });
 }
 
-/**
- * IndexedDB 쓰기 트랜잭션 안에서 동기식 변경을 수행한다.
- * 여러 화면에서 동시에 저장하더라도 데이터 덮어쓰기를 막는다.
- * fn 안에서는 await / fetch 등을 호출하지 말 것.
- */
 export async function modifyArchive<T>(fn: (archive: Archive) => T): Promise<T> {
   const db = await openDatabase();
   return new Promise<T>((resolve, reject) => {
@@ -138,7 +151,6 @@ export async function modifyArchive<T>(fn: (archive: Archive) => T): Promise<T> 
   });
 }
 
-/** 전체 데이터 교체는 백업 유효성을 확인한 뒤 단일 트랜잭션으로 처리한다. */
 async function replaceArchive(next: Archive): Promise<void> {
   const db = await openDatabase();
   return new Promise<void>((resolve, reject) => {
@@ -154,7 +166,7 @@ const validObject = (v: unknown): v is Record<string, unknown> => typeof v === "
 const positiveInt = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 const textField = (v: unknown, max: number) => typeof v === "string" && v.length <= max;
 const validDate = (v: unknown) => textField(v, 80) && !Number.isNaN(Date.parse(v as string));
-const categories = ["song", "cover", "karaoke", "live", "other"];
+const categories = ["song", "cover", "karaoke", "live", "shorts", "kirinuki", "none", "other"];
 const liveStatuses: LiveStatus[] = ["none", "live", "upcoming"];
 
 export async function exportArchive(): Promise<string> {
@@ -167,7 +179,6 @@ export async function exportArchive(): Promise<string> {
   }, null, 2);
 }
 
-/** 헤더·타입·중복·참조까지 검사하고 정상 파일일 때만 기존 데이터를 교체한다. */
 export async function importArchive(raw: string): Promise<{ livers: number; videos: number; timestamps: number }> {
   let input: unknown;
   try { input = JSON.parse(raw); } catch { throw new Error("올바른 JSON 백업 파일이 아니에요."); }
@@ -198,7 +209,7 @@ export async function importArchive(raw: string): Promise<{ livers: number; vide
       !positiveInt(x.liver_id) || !lIds.has(x.liver_id) ||
       !textField(x.youtube_id, 100) || !textField(x.title, 2000) || !validDate(x.published_at) ||
       typeof x.duration !== "number" || !Number.isFinite(x.duration) || x.duration < 0 ||
-      !liveStatuses.includes(x.live_status as LiveStatus) || !categories.includes(x.category as Category) ||
+      !liveStatuses.includes(x.live_status as LiveStatus) || !categories.includes(x.category as string) ||
       typeof x.category_manual !== "boolean" || typeof x.favorite !== "boolean" ||
       !textField(x.memo, 20000)) {
       throw new Error("백업의 영상 정보가 올바르지 않아요.");
@@ -216,7 +227,6 @@ export async function importArchive(raw: string): Promise<{ livers: number; vide
     tIds.add(x.id);
   }
 
-  // 백업에는 자동 번호가 없으므로 기존 최대 ID 뒤부터 할당한다.
   const largest = (ids: Set<number>) => {
     let max = 0;
     for (const id of ids) if (id > max) max = id;
