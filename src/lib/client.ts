@@ -14,7 +14,6 @@ export type Filter = { liver?: number; favorite?: boolean; tab?: "song" | "live"
 export const CATEGORY_LABEL: Record<Category, string> = { song: "노래", live: "라이브", other: "기타" };
 export const errText = (e: unknown) => e instanceof Error ? e.message : "잠시 뒤 다시 시도해 주세요";
 
-/** API는 공개 영상 정보만 돌려준다. 덕질 기록은 서버로 보내지 않는다. */
 async function serverPost<T>(path: string, json: unknown): Promise<T> {
   let response: Response;
   try {
@@ -30,8 +29,6 @@ async function serverPost<T>(path: string, json: unknown): Promise<T> {
   if (!response.ok) throw new Error(body.error ?? "영상 정보를 가져오지 못했어요.");
   return body;
 }
-
-/* --- 라이버 -------------------------------------------------------------- */
 
 export async function listLivers(): Promise<Liver[]> {
   const data = await readArchive();
@@ -88,7 +85,7 @@ async function refreshOne(liver: Liver, pages = 0): Promise<number> {
   if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
   return modifyArchive(archive => {
     const stored = archive.livers.find(l => l.id === liver.id);
-    if (!stored) return 0; // 불러오는 도중 이 라이버가 삭제된 경우
+    if (!stored) return 0;
     const known = new Map(archive.videos.filter(v => v.liver_id === liver.id).map(v => [v.youtube_id, v]));
     let added = 0;
     for (const item of result.videos) {
@@ -117,7 +114,6 @@ async function refreshOne(liver: Liver, pages = 0): Promise<number> {
   });
 }
 
-/** 라이버를 차례로 새로 고친다. API 한도를 넘지 않도록 한 번에 한 명씩. */
 export async function refreshLivers(livers: Liver[], onProgress?: (done: number, total: number) => void) {
   let added = 0;
   const failed: string[] = [];
@@ -128,8 +124,6 @@ export async function refreshLivers(livers: Liver[], onProgress?: (done: number,
   }
   return { added, failed };
 }
-
-/* --- 영상 ---------------------------------------------------------------- */
 
 export async function listVideos(f: Filter, offset = 0, limit = 20): Promise<{ rows: VideoItem[]; more: boolean }> {
   const archive = await readArchive();
@@ -187,8 +181,6 @@ export async function updateVideo(id: number, patch: { category?: Category; favo
   });
 }
 
-/* --- 타임스탬프 ---------------------------------------------------------- */
-
 export async function createStamp(videoId: number, seconds: number, note: string): Promise<Stamp> {
   return modifyArchive(archive => {
     if (!archive.videos.some(v => v.id === videoId)) throw new Error("없는 영상이에요");
@@ -209,8 +201,6 @@ export async function updateStamp(id: number, note: string) {
 export async function deleteStamp(id: number) {
   await modifyArchive(archive => { archive.timestamps = archive.timestamps.filter(s => s.id !== id); });
 }
-
-/* --- 화면용 훅 ----------------------------------------------------------- */
 
 export function useFetch<T>(load: () => Promise<T>, deps: unknown[]) {
   const [data, setData] = useState<T | null>(null);
@@ -258,11 +248,6 @@ export function useVideos(f: Filter, reloadKey = 0) {
   const toggleFavorite = async (v: VideoItem) => {
     const next = !v.favorite;
     setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: next ? 1 : 0 } : x));
-    try { await updateVideo(v.id, { favorite: next }); }
-    catch (e) { setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: v.favorite } : x)); setError(errText(e)); }
-  };
-  return { rows, more, loading, error, loadMore, toggleFavorite };
-}
     try { await updateVideo(v.id, { favorite: next }); }
     catch (e) { setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: v.favorite } : x)); setError(errText(e)); }
   };
