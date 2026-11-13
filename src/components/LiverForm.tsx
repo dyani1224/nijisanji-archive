@@ -4,6 +4,7 @@ import { Avatar } from "./ui";
 import {
   createLiverWithProfile,
   errText,
+  extractYoutubeHandle,
   resolveYoutubeChannel,
   updateLiverProfile,
   type Liver,
@@ -59,7 +60,11 @@ export function LiverForm({
   const isEdit = !!initial;
 
   const [youtubeUrl, setYoutubeUrl] = useState(
-    initial ? `https://www.youtube.com/channel/${initial.channel_id}` : ""
+    initial
+      ? initial.youtube_handle?.startsWith("@")
+        ? `https://www.youtube.com/${initial.youtube_handle}`
+        : `https://www.youtube.com/channel/${initial.channel_id}`
+      : ""
   );
   const [resolved, setResolved] = useState<{ channelId: string; name: string; avatar: string } | undefined>(
     initial ? { channelId: initial.channel_id, name: initial.name_ja || initial.name, avatar: initial.avatar } : undefined
@@ -122,9 +127,12 @@ export function LiverForm({
       ? [...twitterUrls, pendingTw]
       : twitterUrls;
 
+    const extractedHandle = extractYoutubeHandle(youtubeUrl);
+
     const payload = {
       youtubeUrl: youtubeUrl.trim(),
       resolvedChannel: resolved,
+      youtube_handle: extractedHandle || initial?.youtube_handle || resolved?.name || "",
       name_ja: nameJa,
       name_ko: nameKo,
       birthday,
@@ -178,7 +186,7 @@ export function LiverForm({
           </p>
           {resolved && (
             <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700">
-              <Check size={13} /> 유튜브 채널 연동됨 ({resolved.name})
+              <Check size={13} /> 유튜브 채널 연동됨 ({extractYoutubeHandle(youtubeUrl) || resolved.name})
             </p>
           )}
         </div>
@@ -398,10 +406,10 @@ export function LiverForm({
         </label>
       </div>
 
-      {/* 트위터 연동 링크 (여러 개 추가 가능) */}
+      {/* 트위터 계정 추가하기 (본계정 및 부계정 여러 개 추가 가능) */}
       <div className="space-y-2">
         <label htmlFor="tw-link" className="block text-sm font-medium text-ink">
-          트위터 연동 링크 (부계정 추가 가능)
+          트위터 계정 추가하기
         </label>
         <div className="flex gap-2">
           <input
