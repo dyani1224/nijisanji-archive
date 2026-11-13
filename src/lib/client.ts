@@ -88,6 +88,20 @@ async function serverPost<T>(path: string, json: unknown): Promise<T> {
   return body;
 }
 
+export function extractYoutubeHandle(rawUrl: string): string {
+  const s = rawUrl.trim();
+  if (!s) return "";
+  if (s.startsWith("@")) return s.split(/[/?#]/)[0];
+  try {
+    const u = new URL(/^https?:\/\//i.test(s) ? s : `https://${s}`);
+    const seg = u.pathname.split("/").filter(Boolean)[0] ?? "";
+    if (seg.startsWith("@")) return decodeURIComponent(seg);
+  } catch {
+    // ignore
+  }
+  return "";
+}
+
 export async function resolveYoutubeChannel(url: string) {
   return serverPost<{ channelId: string; name: string; avatar: string }>("/resolve", { url });
 }
@@ -116,6 +130,7 @@ export async function getLiver(id: number): Promise<Liver> {
 export type LiverProfileInput = {
   youtubeUrl: string;
   resolvedChannel?: { channelId: string; name: string; avatar: string };
+  youtube_handle?: string;
   name_ja: string;
   name_ko: string;
   birthday: string;
@@ -134,12 +149,14 @@ export async function createLiverWithProfile(input: LiverProfileInput) {
   const info = input.resolvedChannel ?? (await resolveYoutubeChannel(input.youtubeUrl));
   const ja = input.name_ja.trim() || info.name;
   const ko = input.name_ko.trim();
+  const ytHandle = input.youtube_handle?.trim() || extractYoutubeHandle(input.youtubeUrl) || info.name;
 
   const row = await modifyArchive<Liver>(archive => {
     if (archive.livers.some(l => l.channel_id === info.channelId)) throw new Error("이미 등록된 라이버예요");
     const next: Liver = {
       id: archive.nextId.liver++,
       channel_id: info.channelId,
+      youtube_handle: ytHandle,
       name: ja,
       name_ja: ja,
       name_ko: ko,
@@ -194,6 +211,14 @@ export async function updateLiverProfile(id: number, input: Partial<LiverProfile
         liver.name_ja = resolved.name;
         liver.name = resolved.name;
       }
+    }
+
+    if (input.youtube_handle !== undefined && input.youtube_handle.trim()) {
+      liver.youtube_handle = input.youtube_handle.trim();
+    } else if (input.youtubeUrl) {
+      const h = extractYoutubeHandle(input.youtubeUrl);
+      if (h) liver.youtube_handle = h;
+      else if (resolved && !liver.youtube_handle) liver.youtube_handle = resolved.name;
     }
 
     if (input.name_ja !== undefined) {
