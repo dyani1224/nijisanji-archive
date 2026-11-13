@@ -1,17 +1,31 @@
 import { useCallback, useEffect, useState } from "react";
 import { modifyArchive, readArchive } from "./localArchive";
-import type { Category, Liver, LiveStatus, StampRecord, VideoRecord } from "./localArchive";
+import type { Category, ChannelPlaylist, Liver, LiveStatus, StampRecord, VideoRecord, YtVideoType } from "./localArchive";
 
-export type { Category, Liver } from "./localArchive";
+export type { Category, ChannelPlaylist, Liver, YtVideoType } from "./localArchive";
 export type Stamp = { id: number; seconds: number; note: string };
 export type VideoItem = {
   id: number; youtube_id: string; liver_id: number; title: string; published_at: string; duration: number;
-  live_status: LiveStatus; category: Category; favorite: number;
+  live_status: LiveStatus; yt_type: YtVideoType; category: Category; favorite: number;
   liver_name: string; liver_avatar: string; ts_count: number; has_memo: number;
 };
-export type Filter = { liver?: number; favorite?: boolean; tab?: "song" | "live"; category?: string };
+export type Filter = {
+  liver?: number;
+  favorite?: boolean;
+  ytType?: YtVideoType;
+  category?: Category;
+};
 
-export const CATEGORY_LABEL: Record<Category, string> = { song: "노래", live: "라이브", other: "기타" };
+export const ASSIGNABLE_CATEGORIES: Exclude<Category, "none">[] = ["song", "live", "shorts", "kirinuki"];
+
+export const CATEGORY_LABEL: Record<Category, string> = {
+  song: "노래",
+  live: "라이브",
+  shorts: "Shorts",
+  kirinuki: "키리누키",
+  none: "",
+};
+
 export const errText = (e: unknown) => e instanceof Error ? e.message : "잠시 뒤 다시 시도해 주세요";
 
 const backfillDoneKey = (channelId: string) => `yt_backfill_done_${channelId}`;
@@ -77,16 +91,22 @@ async function serverPost<T>(path: string, json: unknown): Promise<T> {
 export async function listLivers(): Promise<Liver[]> {
   const data = await readArchive();
   const counts = new Map<number, number>();
-  for (const video of data.videos) counts.set(video.liver_id, (counts.get(video.liver_id) ?? 0) + 1);
-  return data.livers.map(l => ({ ...l, video_count: counts.get(l.id) ?? 0 }))
-    .sort((a, b) => a.name.localeCompare(b.name, "ko"));
+  const liveSet = new Set<number>();
+  for (const video of data.videos) {
+    counts.set(video.liver_id, (counts.get(video.liver_id) ?? 0) + 1);
+    if (video.live_status === "live") liveSet.add(video.liver_id);
+  }
+  return data.livers
+    .map(l => ({ ...l, video_count: counts.get(l.id) ?? 0, is_live: liveSet.has(l.id) }))
+    .sort((a, b) => Number(!!b.is_live) - Number(!!a.is_live) || a.name.localeCompare(b.name, "ko"));
 }
 
 export async function getLiver(id: number): Promise<Liver> {
   const data = await readArchive();
   const liver = data.livers.find(l => l.id === id);
   if (!liver) throw new Error("없는 라이버예요");
-  return { ...liver };
+  const isLive = data.videos.some(v => v.liver_id === id && v.live_status === "live");
+  return { ...liver, is_live: isLive };
 }
 
 export async function addLiver(url: string) {
@@ -126,14 +146,16 @@ export async function deleteLiver(id: number) {
 
 type FetchedVideo = {
   youtubeId: string; title: string; publishedAt: string; duration: number;
-  liveStatus: LiveStatus; category: Category;
+  liveStatus: LiveStatus; ytType?: YtVideoType; category: Category;
 };
 
-async function upsertVideos(liverId: number, items: FetchedVideo[]) {
+async function upsertVideos(liverId: number, items: FetchedVideo[], playlists?: ChannelPlaylist[]) {
   let hitExisting = false;
   const stats = await modifyArchive(archive => {
     const stored = archive.livers.find(l => l.id === liverId);
     if (!stored) return { added: 0, totalCount: 0 };
+    if (playlists) stored.playlists = playlists;
+
     const liverVideos = archive.videos.filter(v => v.liver_id === liverId);
     const known = new Map(liverVideos.map(v => [v.youtube_id, v]));
     let added = 0;
@@ -146,12 +168,14 @@ async function upsertVideos(liverId: number, items: FetchedVideo[]) {
         old.published_at = item.publishedAt;
         old.duration = item.duration;
         old.live_status = item.liveStatus;
+        if (item.ytType) old.yt_type = item.ytType;
         if (!old.category_manual) old.category = item.category;
       } else {
         const fresh: VideoRecord = {
           id: archive.nextId.video++, youtube_id: item.youtubeId, liver_id: liverId,
           title: item.title, published_at: item.publishedAt, duration: item.duration,
-          live_status: item.liveStatus, category: item.category, category_manual: false,
+          live_status: item.liveStatus, yt_type: item.ytType ?? "video",
+          category: item.category, category_manual: false,
           favorite: false, memo: "",
         };
         archive.videos.push(fresh);
@@ -170,17 +194,16 @@ async function refreshOne(liver: Liver): Promise<number> {
   const savedToken = localStorage.getItem(backfillTokenKey(liver.channel_id)) || "";
   let totalAdded = 0;
 
-  // 1. 전체 불러오기가 이미 완료된 채널은 최신 영상만 빠르게 확인
   if (isBackfillDone) {
     let pageToken = "";
     for (let i = 0; i < 10; i++) {
-      const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
+      const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string; playlists?: ChannelPlaylist[] }>("/sync", {
         channelId: liver.channel_id,
         pages: 2,
         pageToken,
       });
       if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
-      const { added, hitExisting } = await upsertVideos(liver.id, result.videos);
+      const { added, hitExisting } = await upsertVideos(liver.id, result.videos, i === 0 ? result.playlists : undefined);
       totalAdded += added;
       if (hitExisting || !result.nextPageToken) break;
       pageToken = result.nextPageToken;
@@ -188,16 +211,15 @@ async function refreshOne(liver: Liver): Promise<number> {
     return totalAdded;
   }
 
-  // 2. 이전에 중단한 토큰이 남아있는 경우: 최신 영상만 먼저 반영 후 바로 '이어서 불러오기' 창 표시
   if (savedToken) {
-    const latest = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
+    const latest = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string; playlists?: ChannelPlaylist[] }>("/sync", {
       channelId: liver.channel_id,
       pages: 2,
       pageToken: "",
     });
     let currentTotal = 0;
     if (Array.isArray(latest.videos)) {
-      const { added, totalCount } = await upsertVideos(liver.id, latest.videos);
+      const { added, totalCount } = await upsertVideos(liver.id, latest.videos, latest.playlists);
       totalAdded += added;
       currentTotal = totalCount;
     } else {
@@ -214,19 +236,18 @@ async function refreshOne(liver: Liver): Promise<number> {
     if (!shouldResume) return totalAdded;
   }
 
-  // 3. 과거 영상 1,000개 단위로 이어받기 (서버 1회 호출당 500개씩 안전하게 분할 요청)
   let pageToken = savedToken;
   let batchAdded = 0;
 
   for (let chunk = 0; chunk < 100; chunk++) {
-    const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
+    const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string; playlists?: ChannelPlaylist[] }>("/sync", {
       channelId: liver.channel_id,
       pages: 10,
       pageToken,
     });
     if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
 
-    const { added, totalCount } = await upsertVideos(liver.id, result.videos);
+    const { added, totalCount } = await upsertVideos(liver.id, result.videos, !pageToken ? result.playlists : undefined);
     totalAdded += added;
     batchAdded += added;
 
@@ -273,18 +294,22 @@ export async function listVideos(f: Filter, offset = 0, limit = 50): Promise<{ r
   const filtered = archive.videos.filter(v => {
     if (f.liver && v.liver_id !== f.liver) return false;
     if (f.favorite && !v.favorite) return false;
+    if (f.ytType) {
+      const vt: YtVideoType = v.yt_type ?? (v.live_status !== "none" || v.category === "live" ? "live" : v.category === "shorts" ? "shorts" : "video");
+      if (vt !== f.ytType) return false;
+    }
     if (f.category && v.category !== f.category) return false;
-    if (!f.category && f.tab === "song" && v.category !== "song") return false;
-    if (!f.category && f.tab === "live" && !["live", "other"].includes(v.category)) return false;
     return true;
-  }).sort((a, b) => b.published_at.localeCompare(a.published_at) || b.id - a.id);
+  }).sort((a, b) => Number(b.live_status === "live") - Number(a.live_status === "live") || b.published_at.localeCompare(a.published_at) || b.id - a.id);
+
   const subset = filtered.slice(offset, offset + limit);
   const rows = subset.map(v => {
     const liver = livers.get(v.liver_id);
+    const vt: YtVideoType = v.yt_type ?? (v.live_status !== "none" || v.category === "live" ? "live" : v.category === "shorts" ? "shorts" : "video");
     return {
       id: v.id, youtube_id: v.youtube_id, liver_id: v.liver_id, title: v.title,
       published_at: v.published_at, duration: v.duration, live_status: v.live_status,
-      category: v.category, favorite: v.favorite ? 1 : 0,
+      yt_type: vt, category: v.category, favorite: v.favorite ? 1 : 0,
       liver_name: liver?.name ?? "", liver_avatar: liver?.avatar ?? "",
       ts_count: stampCounts.get(v.id) ?? 0, has_memo: v.memo ? 1 : 0,
     };
