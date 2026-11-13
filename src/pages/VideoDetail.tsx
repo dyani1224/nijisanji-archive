@@ -3,14 +3,14 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router";
 import Player, { type PlayerHandle } from "../components/Player";
 import { Avatar, HeartButton, PageHead } from "../components/ui";
-import { createStamp, CATEGORY_LABEL, deleteStamp, errText, getVideo, updateStamp, updateVideo, useFetch, type Category, type Stamp } from "../lib/client";
+import { ASSIGNABLE_CATEGORIES, createStamp, CATEGORY_LABEL, deleteStamp, errText, getVideo, updateStamp, updateVideo, useFetch, type Category, type Stamp } from "../lib/client";
 import { clock, dateKo, parseClock } from "../lib/format";
 
 export default function VideoDetail() {
   const { id = "" } = useParams();
   const { data, error } = useFetch(() => getVideo(Number(id)), [id]);
   const player = useRef<PlayerHandle>(null);
-  const [category, setCategory] = useState<Category>("other");
+  const [category, setCategory] = useState<Category>("none");
   const [fav, setFav] = useState(false);
   const [memo, setMemo] = useState("");
   const [memoState, setMemoState] = useState("");
@@ -28,9 +28,11 @@ export default function VideoDetail() {
   if (!data) return <p className="p-6 text-sm text-ink-3">불러오는 중</p>;
   const v = data.row;
 
-  const changeCategory = async (c: Category) => {
-    const prev = category; setCategory(c);
-    try { await updateVideo(v.id, { category: c }); } catch (e) { setCategory(prev); setMsg(errText(e)); }
+  const toggleCategory = async (c: Exclude<Category, "none">) => {
+    const prev = category;
+    const next: Category = category === c ? "none" : c;
+    setCategory(next);
+    try { await updateVideo(v.id, { category: next }); } catch (e) { setCategory(prev); setMsg(errText(e)); }
   };
   const toggleFav = async () => {
     const next = !fav; setFav(next);
@@ -77,9 +79,11 @@ export default function VideoDetail() {
               <HeartButton on={fav} onClick={toggleFav} />
             </div>
             <div className="mt-2 flex flex-wrap items-center gap-2" role="group" aria-label="분류">
-              {(Object.keys(CATEGORY_LABEL) as Category[]).map(c => (
-                <button key={c} type="button" aria-pressed={category === c} onClick={() => changeCategory(c)}
-                  className={`h-9 rounded-full border px-3.5 text-sm ${category === c ? "border-accent bg-accent text-on-accent" : "border-line text-ink-2 hover:bg-ground-2"}`}>{CATEGORY_LABEL[c]}</button>
+              {ASSIGNABLE_CATEGORIES.map(c => (
+                <button key={c} type="button" aria-pressed={category === c} onClick={() => toggleCategory(c)}
+                  className={`h-9 rounded-full border px-3.5 text-sm ${category === c ? "border-accent bg-accent text-on-accent" : "border-line text-ink-2 hover:bg-ground-2"}`}>
+                  {CATEGORY_LABEL[c]}
+                </button>
               ))}
             </div>
           </div>
