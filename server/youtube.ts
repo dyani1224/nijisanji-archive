@@ -1,4 +1,4 @@
-import { classify, type Category } from "../shared/category";
+import { classify, type Category, type YtVideoType } from "../shared/category";
 
 export type FetchedVideo = {
   youtubeId: string;
@@ -7,12 +7,21 @@ export type FetchedVideo = {
   duration: number;
   liveStatus: "none" | "live" | "upcoming";
   isLive: boolean;
+  ytType: YtVideoType;
   category: Category;
+};
+
+export type PlaylistInfo = {
+  id: string;
+  title: string;
+  thumbnail: string;
+  itemCount: number;
 };
 
 export type FetchResult = {
   videos: FetchedVideo[];
   nextPageToken?: string;
+  playlists?: PlaylistInfo[];
 };
 
 export type ChannelInfo = { channelId: string; name: string; avatar: string };
@@ -97,7 +106,17 @@ async function viaRss(channelId: string): Promise<FetchResult> {
     const title = decode(e.match(/<title>([^<]*)</)?.[1] ?? "");
     const pub = e.match(/<published>([^<]+)</)?.[1];
     if (!id || !pub) continue;
-    out.push({ youtubeId: id, title, publishedAt: new Date(pub).toISOString(), duration: 0, liveStatus: "none", isLive: false, category: classify(title, false, false) });
+    const isShorts = /#shorts/i.test(title);
+    out.push({
+      youtubeId: id,
+      title,
+      publishedAt: new Date(pub).toISOString(),
+      duration: 0,
+      liveStatus: "none",
+      isLive: false,
+      ytType: isShorts ? "shorts" : "video",
+      category: classify(title, false, isShorts),
+    });
   }
   return { videos: out };
 }
@@ -111,11 +130,60 @@ type VideoDetailResponse = {
   }[];
 };
 
+async function fetchShortsIds(channelId: string, key: string): Promise<Set<string>> {
+  const shortsPlaylist = "UUSH" + channelId.slice(2);
+  const ids = new Set<string>();
+  let token = "";
+  for (let i = 0; i < 10; i++) {
+    const r = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50&playlistId=${shortsPlaylist}&key=${key}${token ? `&pageToken=${encodeURIComponent(token)}` : ""}`);
+    if (!r.ok) break;
+    const j = (await r.json()) as { items?: { contentDetails?: { videoId?: string } }[]; nextPageToken?: string };
+    for (const x of j.items ?? []) {
+      if (x.contentDetails?.videoId) ids.add(x.contentDetails.videoId);
+    }
+    if (!j.nextPageToken) break;
+    token = j.nextPageToken;
+  }
+  return ids;
+}
+
+async function fetchChannelPlaylists(channelId: string, key: string): Promise<PlaylistInfo[]> {
+  const playlists: PlaylistInfo[] = [];
+  let token = "";
+  for (let i = 0; i < 4; i++) {
+    const r = await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet,contentDetails&channelId=${channelId}&maxResults=50&key=${key}${token ? `&pageToken=${encodeURIComponent(token)}` : ""}`);
+    if (!r.ok) break;
+    const j = (await r.json()) as {
+      items?: {
+        id: string;
+        snippet: { title: string; thumbnails?: { medium?: { url: string }; default?: { url: string } } };
+        contentDetails?: { itemCount?: number };
+      }[];
+      nextPageToken?: string;
+    };
+    for (const p of j.items ?? []) {
+      playlists.push({
+        id: p.id,
+        title: p.snippet.title,
+        thumbnail: p.snippet.thumbnails?.medium?.url ?? p.snippet.thumbnails?.default?.url ?? "",
+        itemCount: p.contentDetails?.itemCount ?? 0,
+      });
+    }
+    if (!j.nextPageToken) break;
+    token = j.nextPageToken;
+  }
+  return playlists;
+}
+
 async function viaApi(channelId: string, key: string, pages: number, startToken = ""): Promise<FetchResult> {
   const playlist = "UU" + channelId.slice(2);
   const ids: string[] = [];
   let token = startToken;
   let nextPageToken: string | undefined;
+
+  const sideTasks = !startToken
+    ? Promise.all([fetchShortsIds(channelId, key), fetchChannelPlaylists(channelId, key)])
+    : Promise.resolve([new Set<string>(), undefined] as const);
 
   const maxLoop = Math.min(Math.max(pages, 1), 10);
   for (let i = 0; i < maxLoop; i++) {
@@ -135,13 +203,16 @@ async function viaApi(channelId: string, key: string, pages: number, startToken 
     chunks.push(ids.slice(i, i + 50));
   }
 
-  const detailResults = await Promise.all(
-    chunks.map(async chunk => {
-      const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=${chunk.join(",")}&key=${key}`);
-      if (!r.ok) throw new Error("YouTube API 키가 올바르지 않거나 사용 한도를 넘었어요");
-      return (await r.json()) as VideoDetailResponse;
-    })
-  );
+  const [detailResults, [shortsSet, playlists]] = await Promise.all([
+    Promise.all(
+      chunks.map(async chunk => {
+        const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=${chunk.join(",")}&key=${key}`);
+        if (!r.ok) throw new Error("YouTube API 키가 올바르지 않거나 사용 한도를 넘었어요");
+        return (await r.json()) as VideoDetailResponse;
+      })
+    ),
+    sideTasks,
+  ]);
 
   const out: FetchedVideo[] = [];
   for (const j of detailResults) {
@@ -149,19 +220,24 @@ async function viaApi(channelId: string, key: string, pages: number, startToken 
       const ld = v.liveStreamingDetails;
       const bc = v.snippet.liveBroadcastContent;
       const isLive = !!ld;
+      const dur = isoDuration(v.contentDetails.duration);
+      const isShorts = !isLive && (shortsSet.has(v.id) || (dur > 0 && dur <= 180 && /#shorts/i.test(v.snippet.title)));
+      const ytType: YtVideoType = isLive ? "live" : isShorts ? "shorts" : "video";
+
       out.push({
         youtubeId: v.id,
         title: v.snippet.title,
         publishedAt: new Date(ld?.actualStartTime ?? ld?.scheduledStartTime ?? v.snippet.publishedAt).toISOString(),
-        duration: isoDuration(v.contentDetails.duration),
+        duration: dur,
         liveStatus: bc === "live" ? "live" : bc === "upcoming" ? "upcoming" : "none",
         isLive,
-        category: classify(v.snippet.title, isLive, true),
+        ytType,
+        category: classify(v.snippet.title, isLive, isShorts),
       });
     }
   }
 
-  return { videos: out, nextPageToken };
+  return { videos: out, nextPageToken, playlists };
 }
 
 export function fetchVideos(channelId: string, key: string | undefined, pages = 10, pageToken = "") {
