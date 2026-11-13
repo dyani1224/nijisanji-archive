@@ -12,7 +12,6 @@ app.use("*", async (c, next) => {
 const body = async (c: Context) =>
   ((await c.req.json().catch(() => ({}))) ?? {}) as Record<string, unknown>;
 
-// 유튜브 공개 채널 정보만 조회하며, 사용자의 덕질 기록은 서버에서 다루지 않는다.
 app.post("/resolve", async c => {
   const b = await body(c);
   const url = typeof b.url === "string" ? b.url.trim().slice(0, 300) : "";
@@ -24,7 +23,6 @@ app.post("/resolve", async c => {
   }
 });
 
-// 채널의 영상 메타데이터만 응답한다. 분류·즐겨찾기·메모·타임스탬프는 브라우저에 저장한다.
 app.post("/sync", async c => {
   const b = await body(c);
   const channelId = typeof b.channelId === "string" ? b.channelId : "";
