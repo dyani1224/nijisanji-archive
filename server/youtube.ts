@@ -101,7 +101,6 @@ async function viaApi(channelId: string, key: string, pages: number): Promise<Fe
   const playlist = "UU" + channelId.slice(2);
   const ids: string[] = [];
   let token = "";
-  // pages가 0이면 끝까지(최대 100페이지 = 5,000개) 전부 불러옴
   const maxLoop = pages > 0 ? pages : 100;
   for (let i = 0; i < maxLoop; i++) {
     const r = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50&playlistId=${playlist}&key=${key}${token ? `&pageToken=${token}` : ""}`);
@@ -143,5 +142,4 @@ async function viaApi(channelId: string, key: string, pages: number): Promise<Fe
 
 export function fetchVideos(channelId: string, key: string | undefined, pages = 0) {
   return key ? viaApi(channelId, key, pages) : viaRss(channelId);
-} key, pages) : viaRss(channelId);
 }
