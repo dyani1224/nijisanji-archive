@@ -5,7 +5,6 @@ import { Avatar, Chips, PageHead, VideoList } from "../components/ui";
 import { deleteLiver, errText, type Filter, getLiver, refreshLivers, useFetch, useVideos } from "../lib/client";
 
 type Tab = "song" | "live";
-const SONG: [string, string][] = [["", "전체"], ["cover", "커버"], ["karaoke", "가라오케"]];
 const LIVE: [string, string][] = [["", "라이브"], ["other", "기타"]];
 
 export default function LiverDetail() {
@@ -61,7 +60,7 @@ export default function LiverDetail() {
         ))}
       </div>
       <div className="px-4 pt-3 md:px-8">
-        <Chips value={sub} options={tab === "song" ? SONG : LIVE} onChange={setSub} />
+        {tab === "live" && <Chips value={sub} options={LIVE} onChange={setSub} />}
         {status && <p role="status" className="mt-3 text-sm text-ink-2">{status}</p>}
         <VideoList {...list} showLiver={false} onFavorite={list.toggleFavorite} onMore={list.loadMore}
           empty={tab === "song" ? "분류된 노래 영상이 없어요. 새로고침하거나 영상의 분류를 직접 바꿔 보세요." : "해당하는 영상이 없어요."} />
