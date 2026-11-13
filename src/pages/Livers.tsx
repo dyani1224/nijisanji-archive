@@ -4,7 +4,6 @@ import { Link, useSearchParams } from "react-router";
 import { LiverForm, normalizeHexColor } from "../components/LiverForm";
 import { Avatar, PageHead } from "../components/ui";
 import { listLivers, useFetch } from "../lib/client";
-import { ago } from "../lib/format";
 
 export default function Livers() {
   const { data, error, loading, reload } = useFetch(listLivers, []);
@@ -53,18 +52,7 @@ export default function Livers() {
 
   return (
     <>
-      <PageHead
-        back={
-          <Link
-            to="/"
-            aria-label="홈으로"
-            className="-ml-2 grid h-10 w-10 place-items-center rounded-full hover:bg-ground-2"
-          >
-            <ChevronLeft size={24} />
-          </Link>
-        }
-        title="전체 라이버"
-      >
+      <PageHead title="라이버">
         <button
           type="button"
           onClick={openAdd}
@@ -75,7 +63,7 @@ export default function Livers() {
         </button>
       </PageHead>
 
-      <div className="px-4 pt-4 md:px-8">
+      <div className="px-4 pt-3 md:px-8">
         {msg && (
           <p role="status" className="mb-3 rounded-control bg-ground-2 px-3 py-2 text-sm text-ink-2">
             {msg}
@@ -100,19 +88,19 @@ export default function Livers() {
           </div>
         )}
 
-        <ul className="grid gap-x-8 sm:grid-cols-2">
+        <ul className="divide-y divide-line sm:grid sm:grid-cols-2 sm:gap-x-8 sm:divide-y-0">
           {data?.map(l => {
             const ja = l.name_ja || l.name;
             const ko = l.name_ko || "";
             const hex = normalizeHexColor(l.official_color || "");
 
             return (
-              <li key={l.id} className="border-b border-line">
-                <Link to={`/livers/${l.id}`} className="flex items-center gap-3 py-3">
-                  <Avatar src={l.avatar} name={ja} size={50} isLive={l.is_live} />
+              <li key={l.id} className="sm:border-b sm:border-line">
+                <Link to={`/livers/${l.id}`} className="flex items-center gap-3.5 py-3.5">
+                  <Avatar src={l.avatar} name={ja} size={52} isLive={l.is_live} />
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center gap-1.5">
-                      <span className="truncate font-semibold text-ink">{ja}</span>
+                      <span className="truncate text-base font-bold text-ink">{ja}</span>
                       {l.oshi_mark && <span className="shrink-0 text-sm">{l.oshi_mark}</span>}
                       {hex && (
                         <span
@@ -120,16 +108,8 @@ export default function Livers() {
                           style={{ backgroundColor: hex }}
                         />
                       )}
-                      {l.is_live && (
-                        <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
-                          라이브 중
-                        </span>
-                      )}
                     </span>
-                    {ko && <span className="block truncate text-xs text-ink-2">{ko}</span>}
-                    <span className="mt-0.5 block text-xs text-ink-3">
-                      영상 {l.video_count ?? 0}개{l.last_fetched ? ` · 갱신 ${ago(l.last_fetched)}` : ""}
-                    </span>
+                    {ko && <span className="mt-0.5 block truncate text-xs text-ink-2">{ko}</span>}
                   </span>
                 </Link>
               </li>
