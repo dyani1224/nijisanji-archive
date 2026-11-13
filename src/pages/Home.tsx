@@ -1,4 +1,4 @@
-import { ChevronLeft, RefreshCw, X } from "lucide-react";
+import { ChevronLeft, RefreshCw } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { Avatar, Chips, PageHead, VideoList } from "../components/ui";
@@ -30,7 +30,6 @@ export default function Home() {
   if (chip !== "all") filter.category = chip;
 
   const list = useVideos(filter, key);
-  const activeLiver = livers?.find(l => l.id === selectedLiver);
 
   const refresh = async () => {
     setBusy(true);
@@ -46,7 +45,6 @@ export default function Home() {
     setBusy(false);
   };
 
-  /* 홈 상단 '전체' 클릭 시: 라이버 탭으로 가지 않고 전체 채널 목록 표시 */
   if (showAllLivers) {
     return (
       <>
@@ -132,7 +130,6 @@ export default function Home() {
         </button>
       </PageHead>
 
-      {/* 유튜브 구독 상단 라이버 가로 스크롤 + 전체 버튼 */}
       {livers && livers.length > 0 && (
         <div className="flex items-center border-b border-line bg-ground">
           <div className="flex flex-1 gap-3 overflow-x-auto px-4 py-3 md:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
@@ -146,7 +143,11 @@ export default function Home() {
                   onClick={() => setSelectedLiver(selected ? null : l.id)}
                   className="flex w-16 shrink-0 flex-col items-center gap-1.5 text-center"
                 >
-                  <span className={`rounded-full p-0.5 transition ${selected ? "ring-2 ring-accent" : ""}`}>
+                  <span
+                    className={`inline-flex shrink-0 items-center justify-center rounded-full p-0.5 transition ${
+                      selected ? "ring-2 ring-accent" : ""
+                    }`}
+                  >
                     <Avatar src={l.avatar} name={displayName} size={52} isLive={l.is_live} />
                   </span>
                   <span className={`w-full truncate text-xs ${selected ? "font-semibold text-accent" : "text-ink-2"}`}>
@@ -167,22 +168,6 @@ export default function Home() {
       )}
 
       <div className="px-4 pt-3 md:px-8">
-        {activeLiver && (
-          <div className="mb-3 flex items-center justify-between rounded-control bg-ground-2 px-3 py-2 text-sm">
-            <span className="truncate font-medium text-ink">
-              {activeLiver.name_ja || activeLiver.name} 영상만 보는 중
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelectedLiver(null)}
-              aria-label="필터 해제"
-              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-ground"
-            >
-              <X size={15} />
-            </button>
-          </div>
-        )}
-
         <Chips value={chip} options={CHIPS} onChange={setChip} />
         {status && <p role="status" className="mt-3 text-sm text-ink-2">{status}</p>}
         <VideoList
