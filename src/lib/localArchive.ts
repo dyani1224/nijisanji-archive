@@ -2,7 +2,8 @@
  * 로그인 없이 이 브라우저에만 기록을 보관하는 IndexedDB 저장소.
  * 백업 파일의 형태는 별도의 버전으로 관리해서 다른 기기로 옮길 수 있다.
  */
-export type Category = "cover" | "karaoke" | "live" | "other";
+import { classify, type Category } from "../../shared/category";
+export type { Category } from "../../shared/category";
 export type LiveStatus = "none" | "live" | "upcoming";
 
 export type Liver = {
@@ -47,6 +48,22 @@ const emptyArchive = (): Archive => ({
   nextId: { liver: 1, video: 1, stamp: 1 },
 });
 
+/** 예전 커버·가라오케와 미분류 영상에 현재 제목 기준을 적용한다. 수동 지정은 유지한다. */
+function normalizeCategories(data: Archive): boolean {
+  let changed = false;
+  for (const video of data.videos) {
+    const storedCategory = video.category as string; // 이전 백업에는 두 분류가 남아 있을 수 있다.
+    const next = storedCategory === "cover" || storedCategory === "karaoke" ? "song"
+      : video.category_manual ? video.category
+      : classify(video.title, video.category === "live" || video.live_status !== "none", false);
+    if (next !== video.category) {
+      video.category = next;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
 function openDatabase(): Promise<IDBDatabase> {
   if (pendingDB) return pendingDB;
   if (typeof indexedDB === "undefined") {
@@ -76,10 +93,17 @@ function openDatabase(): Promise<IDBDatabase> {
 export async function readArchive(): Promise<Archive> {
   const db = await openDatabase();
   return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, "readonly");
-    const req = transaction.objectStore(STORE_NAME).get(STORAGE_KEY);
-    req.onsuccess = () => resolve((req.result as Archive | undefined) ?? emptyArchive());
+    const transaction = db.transaction(STORE_NAME, "readwrite");
+    const store = transaction.objectStore(STORE_NAME);
+    const req = store.get(STORAGE_KEY);
+    let data: Archive;
+    req.onsuccess = () => {
+      data = (req.result as Archive | undefined) ?? emptyArchive();
+      if (normalizeCategories(data)) store.put(data, STORAGE_KEY);
+    };
     req.onerror = () => reject(req.error ?? new Error("기록을 불러올 수 없어요."));
+    transaction.oncomplete = () => resolve(data);
+    transaction.onerror = () => reject(transaction.error ?? new Error("기록을 불러올 수 없어요."));
   });
 }
 
@@ -99,6 +123,7 @@ export async function modifyArchive<T>(fn: (archive: Archive) => T): Promise<T> 
     req.onsuccess = () => {
       try {
         const data = (req.result as Archive | undefined) ?? emptyArchive();
+        normalizeCategories(data);
         result = fn(data);
         store.put(data, STORAGE_KEY);
       } catch (e) {
@@ -129,7 +154,7 @@ const validObject = (v: unknown): v is Record<string, unknown> => typeof v === "
 const positiveInt = (v: unknown): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0;
 const textField = (v: unknown, max: number) => typeof v === "string" && v.length <= max;
 const validDate = (v: unknown) => textField(v, 80) && !Number.isNaN(Date.parse(v as string));
-const categories: Category[] = ["cover", "karaoke", "live", "other"];
+const categories = ["song", "cover", "karaoke", "live", "other"];
 const liveStatuses: LiveStatus[] = ["none", "live", "upcoming"];
 
 export async function exportArchive(): Promise<string> {
@@ -207,6 +232,7 @@ export async function importArchive(raw: string): Promise<{ livers: number; vide
       stamp: largest(tIds) + 1,
     },
   };
+  normalizeCategories(next);
   await replaceArchive(next);
   return { livers: livers.length, videos: videos.length, timestamps: stamps.length };
 }

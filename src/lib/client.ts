@@ -11,7 +11,7 @@ export type VideoItem = {
 };
 export type Filter = { liver?: number; favorite?: boolean; tab?: "song" | "live"; category?: string };
 
-export const CATEGORY_LABEL: Record<Category, string> = { cover: "커버", karaoke: "가라오케", live: "라이브", other: "기타" };
+export const CATEGORY_LABEL: Record<Category, string> = { song: "노래", live: "라이브", other: "기타" };
 export const errText = (e: unknown) => e instanceof Error ? e.message : "잠시 뒤 다시 시도해 주세요";
 
 /** API는 공개 영상 정보만 돌려준다. 덕질 기록은 서버로 보내지 않는다. */
@@ -140,7 +140,7 @@ export async function listVideos(f: Filter, offset = 0, limit = 40): Promise<{ r
     if (f.liver && v.liver_id !== f.liver) return false;
     if (f.favorite && !v.favorite) return false;
     if (f.category && v.category !== f.category) return false;
-    if (!f.category && f.tab === "song" && !["cover", "karaoke"].includes(v.category)) return false;
+    if (!f.category && f.tab === "song" && v.category !== "song") return false;
     if (!f.category && f.tab === "live" && !["live", "other"].includes(v.category)) return false;
     return true;
   }).sort((a, b) => b.published_at.localeCompare(a.published_at) || b.id - a.id);
