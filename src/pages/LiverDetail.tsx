@@ -160,6 +160,10 @@ export default function LiverDetail() {
 
   const nameJa = liver?.name_ja || liver?.name || "";
   const nameKo = liver?.name_ko || "";
+  const youtubeLabel = liver?.youtube_handle || nameJa;
+  const youtubeHref = liver?.youtube_handle?.startsWith("@")
+    ? `https://www.youtube.com/${liver.youtube_handle}`
+    : `https://www.youtube.com/channel/${liver?.channel_id ?? ""}`;
   const debutDays = calcElapsedDays(liver?.debut_date);
   const oshiDays = calcElapsedDays(liver?.oshi_date);
   const twitters = liver?.twitter_urls ?? [];
@@ -223,8 +227,8 @@ export default function LiverDetail() {
           {/* 1. 상단 프로필 사진 + 일본 이름 / 한국 이름 */}
           <div className="flex items-center gap-4">
             <span
-              className="rounded-full p-0.5"
-              style={themeHex ? { boxShadow: `0 0 0 2.5px ${themeHex}` } : undefined}
+              className="inline-flex shrink-0 rounded-full p-0.5"
+              style={themeHex ? { border: `2.5px solid ${themeHex}` } : undefined}
             >
               <Avatar src={liver.avatar} name={nameJa} size={76} isLive={liver.is_live} />
             </span>
@@ -284,7 +288,7 @@ export default function LiverDetail() {
               </button>
             )}
 
-            {/* 데뷔일 칸 (탭하면 OS 날짜 선택창 바로 오픈) */}
+            {/* 데뷔일 칸 */}
             <label className="relative flex min-h-[74px] cursor-pointer flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center transition hover:bg-ground-2/70">
               <span className="text-[11px] text-ink-3">데뷔일</span>
               <span className="mt-1 text-xs font-semibold text-ink tabular-nums">
@@ -307,7 +311,7 @@ export default function LiverDetail() {
               />
             </label>
 
-            {/* 입덕일 칸 (탭하면 OS 날짜 선택창 바로 오픈) */}
+            {/* 입덕일 칸 */}
             <label className="relative flex min-h-[74px] cursor-pointer flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center transition hover:bg-ground-2/70">
               <span className="text-[11px] text-ink-3">입덕일</span>
               <span className="mt-1 text-xs font-semibold text-ink tabular-nums">
@@ -330,7 +334,7 @@ export default function LiverDetail() {
               />
             </label>
 
-            {/* 멤버십 칸 (탭하면 즉시 ON/OFF + 공식색 테두리 반영) */}
+            {/* 멤버십 칸 */}
             <button
               type="button"
               onClick={toggleMembership}
@@ -515,23 +519,23 @@ export default function LiverDetail() {
             )}
           </div>
 
-          {/* 4. 외부 링크 칸: 유튜브 / 트위터(등록 및 부계정 추가) / 니지위키(등록 및 이동) */}
+          {/* 4. 외부 링크 칸: 유튜브 / 트위터 / 니지위키 */}
           <div className="mt-4 space-y-2.5">
-            {/* 유튜브 연동 링크 */}
+            {/* 유튜브 */}
             <a
-              href={`https://www.youtube.com/channel/${liver.channel_id}`}
+              href={youtubeHref}
               target="_blank"
               rel="noreferrer"
               className="flex h-12 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink transition hover:bg-ground-2/70"
             >
               <span className="flex items-center gap-2.5 truncate">
                 <Youtube size={18} className="shrink-0 text-rose-600" />
-                <span className="truncate">유튜브 연동 링크</span>
+                <span className="truncate">유튜브 · {youtubeLabel}</span>
               </span>
               <ExternalLink size={15} className="shrink-0 text-ink-3" />
             </a>
 
-            {/* 트위터 연동 링크 (등록된 계정 목록 + 바로 추가) */}
+            {/* 트위터 (등록된 계정 목록) */}
             {twitters.map((url, idx) => {
               const href = normalizeTwitterUrl(url);
               return (
@@ -558,62 +562,55 @@ export default function LiverDetail() {
               );
             })}
 
-            {activeField === "twitter_add" ? (
-              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3">
-                <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black text-xs font-bold text-white">
-                  𝕏
-                </span>
-                <input
-                  autoFocus
-                  type="text"
-                  value={draft}
-                  onChange={e => setDraft(e.target.value)}
-                  onKeyDown={e => {
-                    if (e.key === "Enter" && draft.trim()) {
-                      const next = normalizeTwitterUrl(draft);
-                      saveQuick({
-                        twitter_urls: twitters.includes(next) ? twitters : [...twitters, next],
-                      });
-                    }
-                    if (e.key === "Escape") cancelInline();
-                  }}
-                  placeholder="https://x.com/... 또는 @아이디"
-                  className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink focus:outline-none"
-                />
-                <button
-                  type="button"
-                  disabled={!draft.trim()}
-                  onClick={() => {
-                    const next = normalizeTwitterUrl(draft);
-                    saveQuick({
-                      twitter_urls: twitters.includes(next) ? twitters : [...twitters, next],
-                    });
-                  }}
-                  aria-label="트위터 저장"
-                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent disabled:opacity-40"
-                >
-                  <Check size={15} />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => startInline("twitter_add", "")}
-                className="flex h-12 w-full items-center justify-between rounded-xl border border-dashed border-line-strong bg-ground px-3.5 text-sm font-medium text-ink-2 transition hover:bg-ground-2/70"
-              >
-                <span className="flex items-center gap-2.5">
-                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black/80 text-xs font-bold text-white">
+            {/* 트위터가 아직 하나도 등록되지 않았을 때만 등록 칸 표시 */}
+            {twitters.length === 0 && (
+              activeField === "twitter_add" ? (
+                <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black text-xs font-bold text-white">
                     𝕏
                   </span>
-                  <span>
-                    {twitters.length === 0 ? "트위터 연동 링크 등록하기" : "트위터 부계정 추가하기"}
+                  <input
+                    autoFocus
+                    type="text"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter" && draft.trim()) {
+                        saveQuick({ twitter_urls: [normalizeTwitterUrl(draft)] });
+                      }
+                      if (e.key === "Escape") cancelInline();
+                    }}
+                    placeholder="https://x.com/... 또는 @아이디"
+                    className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink focus:outline-none"
+                  />
+                  <button
+                    type="button"
+                    disabled={!draft.trim()}
+                    onClick={() => saveQuick({ twitter_urls: [normalizeTwitterUrl(draft)] })}
+                    aria-label="트위터 저장"
+                    className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent disabled:opacity-40"
+                  >
+                    <Check size={15} />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => startInline("twitter_add", "")}
+                  className="flex h-12 w-full items-center justify-between rounded-xl border border-dashed border-line-strong bg-ground px-3.5 text-sm font-medium text-ink-2 transition hover:bg-ground-2/70"
+                >
+                  <span className="flex items-center gap-2.5">
+                    <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black/80 text-xs font-bold text-white">
+                      𝕏
+                    </span>
+                    <span>트위터 링크 등록하기</span>
                   </span>
-                </span>
-                <Plus size={16} className="shrink-0 text-ink-3" />
-              </button>
+                  <Plus size={16} className="shrink-0 text-ink-3" />
+                </button>
+              )
             )}
 
-            {/* 니지위키 링크 (미등록 시 클릭하여 바로 등록, 등록 시 바로 이동) */}
+            {/* 니지위키 */}
             {activeField === "nijiwiki" ? (
               <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3">
                 <BookOpen size={17} className="shrink-0 text-sky-600" />
@@ -643,26 +640,18 @@ export default function LiverDetail() {
                 </button>
               </div>
             ) : liver.nijiwiki_url ? (
-              <div className="flex h-12 items-center rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink">
-                <a
-                  href={normalizeWikiUrl(liver.nijiwiki_url)}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex h-full min-w-0 flex-1 items-center gap-2.5"
-                >
+              <a
+                href={normalizeWikiUrl(liver.nijiwiki_url)}
+                target="_blank"
+                rel="noreferrer"
+                className="flex h-12 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink transition hover:bg-ground-2/70"
+              >
+                <span className="flex items-center gap-2.5 truncate">
                   <BookOpen size={17} className="shrink-0 text-sky-600" />
-                  <span className="truncate">니지위키 링크 열기</span>
-                  <ExternalLink size={15} className="ml-auto shrink-0 text-ink-3" />
-                </a>
-                <button
-                  type="button"
-                  onClick={() => startInline("nijiwiki", liver.nijiwiki_url || "")}
-                  aria-label="니지위키 링크 수정"
-                  className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-ground-2"
-                >
-                  <Pencil size={14} />
-                </button>
-              </div>
+                  <span className="truncate">니지위키</span>
+                </span>
+                <ExternalLink size={15} className="shrink-0 text-ink-3" />
+              </a>
             ) : (
               <button
                 type="button"
