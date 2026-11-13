@@ -71,7 +71,7 @@ export function LiverForm({
   );
   const [resolving, setResolving] = useState(false);
 
-  const [nameJa, setNameJa] = useState(initial?.name_ja || initial?.name || "");
+  const [nameJa, setNameJa] = useState(initial?.name_ja || "");
   const [nameKo, setNameKo] = useState(initial?.name_ko || "");
   const [birthday, setBirthday] = useState(initial?.birthday || "");
   const [debutDate, setDebutDate] = useState(initial?.debut_date || "");
@@ -98,7 +98,6 @@ export function LiverForm({
     try {
       const info = await resolveYoutubeChannel(youtubeUrl);
       setResolved(info);
-      if (!nameJa.trim()) setNameJa(info.name);
     } catch (e) {
       setError(errText(e));
     }
@@ -171,19 +170,19 @@ export function LiverForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-5 pb-10">
       {/* 상단 프로필 미리보기 */}
-      <div className="flex items-center gap-4 rounded-2xl border border-line bg-ground-2/60 p-4">
+      <div className="flex min-h-[100px] items-center gap-4 rounded-2xl border border-line bg-ground-2/60 p-4">
         <Avatar
           src={resolved?.avatar || ""}
-          name={nameJa || nameKo || "?"}
+          name={nameJa || nameKo || ""}
           size={68}
         />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-lg font-bold text-ink">
-            {nameJa.trim() || "일본 이름"}
-          </p>
-          <p className="mt-0.5 truncate text-sm text-ink-2">
-            {nameKo.trim() || "한국 이름"}
-          </p>
+          {nameJa.trim() && (
+            <p className="truncate text-lg font-bold text-ink">{nameJa.trim()}</p>
+          )}
+          {nameKo.trim() && (
+            <p className="mt-0.5 truncate text-sm text-ink-2">{nameKo.trim()}</p>
+          )}
           {resolved && (
             <p className="mt-1 flex items-center gap-1 text-xs text-emerald-700">
               <Check size={13} /> 유튜브 채널 연동됨 ({extractYoutubeHandle(youtubeUrl) || resolved.name})
@@ -206,7 +205,6 @@ export function LiverForm({
               setYoutubeUrl(e.target.value);
               if (!isEdit) setResolved(undefined);
             }}
-            placeholder="https://www.youtube.com/@..."
             className="h-control min-w-0 flex-1 rounded-control border border-line-strong bg-field px-3 text-sm"
           />
           <button
@@ -218,9 +216,6 @@ export function LiverForm({
             {resolving ? "연동 중..." : "연동 확인"}
           </button>
         </div>
-        <p className="text-xs text-ink-3">
-          유튜브 주소를 붙여넣고 연동 확인을 누르면 프로필 사진과 채널명이 자동으로 연결됩니다.
-        </p>
       </div>
 
       {/* 일본 이름 / 한국 이름 */}
@@ -234,7 +229,6 @@ export function LiverForm({
             type="text"
             value={nameJa}
             onChange={e => setNameJa(e.target.value)}
-            placeholder="例: 葛葉"
             className="h-control w-full rounded-control border border-line-strong bg-field px-3 text-sm"
           />
         </div>
@@ -247,7 +241,6 @@ export function LiverForm({
             type="text"
             value={nameKo}
             onChange={e => setNameKo(e.target.value)}
-            placeholder="예: 쿠즈하"
             className="h-control w-full rounded-control border border-line-strong bg-field px-3 text-sm"
           />
         </div>
@@ -264,7 +257,6 @@ export function LiverForm({
             type="text"
             value={birthday}
             onChange={e => setBirthday(e.target.value)}
-            placeholder="11.10"
             maxLength={10}
             className="h-control w-full rounded-control border border-line-strong bg-field px-3 text-sm"
           />
@@ -328,7 +320,6 @@ export function LiverForm({
             type="text"
             value={oshiMark}
             onChange={e => setOshiMark(e.target.value)}
-            placeholder="예: 🎲"
             className="h-control w-full rounded-control border border-line-strong bg-field px-3 text-sm"
           />
         </div>
@@ -341,7 +332,6 @@ export function LiverForm({
             type="text"
             value={fanName}
             onChange={e => setFanName(e.target.value)}
-            placeholder="팬네임 입력"
             className="h-control w-full rounded-control border border-line-strong bg-field px-3 text-sm"
           />
         </div>
@@ -376,7 +366,6 @@ export function LiverForm({
             type="text"
             value={officialColor}
             onChange={e => setOfficialColor(e.target.value)}
-            placeholder="#FF0000 또는 색상 코드 입력"
             maxLength={10}
             className="h-control min-w-0 flex-1 rounded-control border border-line-strong bg-field px-3 text-sm uppercase"
           />
@@ -406,7 +395,7 @@ export function LiverForm({
         </label>
       </div>
 
-      {/* 트위터 계정 추가하기 (본계정 및 부계정 여러 개 추가 가능) */}
+      {/* 트위터 계정 추가하기 */}
       <div className="space-y-2">
         <label htmlFor="tw-link" className="block text-sm font-medium text-ink">
           트위터 계정 추가하기
@@ -423,7 +412,6 @@ export function LiverForm({
                 addTwitterAccount();
               }
             }}
-            placeholder="https://x.com/... 또는 @아이디"
             className="h-control min-w-0 flex-1 rounded-control border border-line-strong bg-field px-3 text-sm"
           />
           <button
@@ -479,7 +467,6 @@ export function LiverForm({
           type="text"
           value={nijiwikiUrl}
           onChange={e => setNijiwikiUrl(e.target.value)}
-          placeholder="https://wikiwiki.jp/nijisanji/..."
           className="h-control w-full rounded-control border border-line-strong bg-field px-3 text-sm"
         />
       </div>
