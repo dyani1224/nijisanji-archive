@@ -14,6 +14,50 @@ export type Filter = { liver?: number; favorite?: boolean; tab?: "song" | "live"
 export const CATEGORY_LABEL: Record<Category, string> = { song: "노래", live: "라이브", other: "기타" };
 export const errText = (e: unknown) => e instanceof Error ? e.message : "잠시 뒤 다시 시도해 주세요";
 
+const backfillDoneKey = (channelId: string) => `yt_backfill_done_${channelId}`;
+const backfillTokenKey = (channelId: string) => `yt_backfill_token_${channelId}`;
+
+/* --- 이어서 불러오기 모달 상태 관리 -------------------------------------- */
+
+export type ContinuePromptState = {
+  liverName: string;
+  addedInBatch: number;
+  totalCount: number;
+  isResumePrompt: boolean;
+  resolve: (keepGoing: boolean) => void;
+};
+
+let currentPrompt: ContinuePromptState | null = null;
+const promptListeners = new Set<(state: ContinuePromptState | null) => void>();
+
+function notifyPrompt(state: ContinuePromptState | null) {
+  currentPrompt = state;
+  for (const listener of promptListeners) listener(state);
+}
+
+function askContinue(info: Omit<ContinuePromptState, "resolve">): Promise<boolean> {
+  return new Promise<boolean>(resolve => {
+    notifyPrompt({
+      ...info,
+      resolve: (keepGoing: boolean) => {
+        notifyPrompt(null);
+        resolve(keepGoing);
+      },
+    });
+  });
+}
+
+export function useContinuePrompt() {
+  const [state, setState] = useState<ContinuePromptState | null>(currentPrompt);
+  useEffect(() => {
+    promptListeners.add(setState);
+    return () => { promptListeners.delete(setState); };
+  }, []);
+  return state;
+}
+
+/* --- API 통신 ------------------------------------------------------------ */
+
 async function serverPost<T>(path: string, json: unknown): Promise<T> {
   let response: Response;
   try {
@@ -68,6 +112,11 @@ export async function addLiver(url: string) {
 
 export async function deleteLiver(id: number) {
   await modifyArchive(archive => {
+    const liver = archive.livers.find(l => l.id === id);
+    if (liver) {
+      localStorage.removeItem(backfillDoneKey(liver.channel_id));
+      localStorage.removeItem(backfillTokenKey(liver.channel_id));
+    }
     const target = new Set(archive.videos.filter(v => v.liver_id === id).map(v => v.id));
     archive.livers = archive.livers.filter(l => l.id !== id);
     archive.videos = archive.videos.filter(v => v.liver_id !== id);
@@ -80,64 +129,126 @@ type FetchedVideo = {
   liveStatus: LiveStatus; category: Category;
 };
 
-async function refreshOne(liver: Liver): Promise<number> {
-  const initialArchive = await readArchive();
-  const existingIds = new Set(
-    initialArchive.videos.filter(v => v.liver_id === liver.id).map(v => v.youtube_id)
-  );
-  // 기존에 저장된 영상이 있으면 최신 2페이지(100개)씩만 확인, 없으면 10페이지(500개)씩 전체 백필
-  const isIncremental = existingIds.size > 0;
-  const pagesPerChunk = isIncremental ? 2 : 10;
+async function upsertVideos(liverId: number, items: FetchedVideo[]) {
+  let hitExisting = false;
+  const stats = await modifyArchive(archive => {
+    const stored = archive.livers.find(l => l.id === liverId);
+    if (!stored) return { added: 0, totalCount: 0 };
+    const liverVideos = archive.videos.filter(v => v.liver_id === liverId);
+    const known = new Map(liverVideos.map(v => [v.youtube_id, v]));
+    let added = 0;
+    for (const item of items) {
+      if (!item.youtubeId || !item.title || Number.isNaN(Date.parse(item.publishedAt))) continue;
+      const old = known.get(item.youtubeId);
+      if (old) {
+        hitExisting = true;
+        old.title = item.title;
+        old.published_at = item.publishedAt;
+        old.duration = item.duration;
+        old.live_status = item.liveStatus;
+        if (!old.category_manual) old.category = item.category;
+      } else {
+        const fresh: VideoRecord = {
+          id: archive.nextId.video++, youtube_id: item.youtubeId, liver_id: liverId,
+          title: item.title, published_at: item.publishedAt, duration: item.duration,
+          live_status: item.liveStatus, category: item.category, category_manual: false,
+          favorite: false, memo: "",
+        };
+        archive.videos.push(fresh);
+        known.set(item.youtubeId, fresh);
+        added++;
+      }
+    }
+    stored.last_fetched = new Date().toISOString();
+    return { added, totalCount: known.size };
+  });
+  return { ...stats, hitExisting };
+}
 
-  let pageToken = "";
+async function refreshOne(liver: Liver): Promise<number> {
+  const isBackfillDone = localStorage.getItem(backfillDoneKey(liver.channel_id)) === "1";
+  const savedToken = localStorage.getItem(backfillTokenKey(liver.channel_id)) || "";
   let totalAdded = 0;
 
-  for (let chunk = 0; chunk < 40; chunk++) {
+  // 1. 전체 불러오기가 이미 완료된 채널은 최신 영상만 빠르게 확인
+  if (isBackfillDone) {
+    let pageToken = "";
+    for (let i = 0; i < 10; i++) {
+      const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
+        channelId: liver.channel_id,
+        pages: 2,
+        pageToken,
+      });
+      if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
+      const { added, hitExisting } = await upsertVideos(liver.id, result.videos);
+      totalAdded += added;
+      if (hitExisting || !result.nextPageToken) break;
+      pageToken = result.nextPageToken;
+    }
+    return totalAdded;
+  }
+
+  // 2. 이전에 중단한 토큰이 남아있는 경우: 최신 영상만 먼저 반영 후 바로 '이어서 불러오기' 창 표시
+  if (savedToken) {
+    const latest = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
+      channelId: liver.channel_id,
+      pages: 2,
+      pageToken: "",
+    });
+    let currentTotal = 0;
+    if (Array.isArray(latest.videos)) {
+      const { added, totalCount } = await upsertVideos(liver.id, latest.videos);
+      totalAdded += added;
+      currentTotal = totalCount;
+    } else {
+      const archive = await readArchive();
+      currentTotal = archive.videos.filter(v => v.liver_id === liver.id).length;
+    }
+
+    const shouldResume = await askContinue({
+      liverName: liver.name,
+      addedInBatch: totalAdded,
+      totalCount: currentTotal,
+      isResumePrompt: true,
+    });
+    if (!shouldResume) return totalAdded;
+  }
+
+  // 3. 과거 영상 1,000개 단위로 이어받기 (서버 1회 호출당 500개씩 안전하게 분할 요청)
+  let pageToken = savedToken;
+  let batchAdded = 0;
+
+  for (let chunk = 0; chunk < 100; chunk++) {
     const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
       channelId: liver.channel_id,
-      pages: pagesPerChunk,
+      pages: 10,
       pageToken,
     });
     if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
 
-    let hitExisting = false;
-    const chunkAdded = await modifyArchive(archive => {
-      const stored = archive.livers.find(l => l.id === liver.id);
-      if (!stored) return 0;
-      const known = new Map(archive.videos.filter(v => v.liver_id === liver.id).map(v => [v.youtube_id, v]));
-      let added = 0;
-      for (const item of result.videos) {
-        if (!item.youtubeId || !item.title || Number.isNaN(Date.parse(item.publishedAt))) continue;
-        const old = known.get(item.youtubeId);
-        if (old) {
-          hitExisting = true;
-          old.title = item.title;
-          old.published_at = item.publishedAt;
-          old.duration = item.duration;
-          old.live_status = item.liveStatus;
-          if (!old.category_manual) old.category = item.category;
-        } else {
-          const fresh: VideoRecord = {
-            id: archive.nextId.video++, youtube_id: item.youtubeId, liver_id: liver.id,
-            title: item.title, published_at: item.publishedAt, duration: item.duration,
-            live_status: item.liveStatus, category: item.category, category_manual: false,
-            favorite: false, memo: "",
-          };
-          archive.videos.push(fresh);
-          known.set(item.youtubeId, fresh);
-          added++;
-        }
-      }
-      stored.last_fetched = new Date().toISOString();
-      return added;
-    });
+    const { added, totalCount } = await upsertVideos(liver.id, result.videos);
+    totalAdded += added;
+    batchAdded += added;
 
-    totalAdded += chunkAdded;
+    if (!result.nextPageToken) {
+      localStorage.removeItem(backfillTokenKey(liver.channel_id));
+      localStorage.setItem(backfillDoneKey(liver.channel_id), "1");
+      break;
+    }
 
-    // 증분 업데이트 모드에서 이미 저장된 영상을 만났다면 더 과거 내역은 조회하지 않고 종료
-    if (isIncremental && hitExisting) break;
-    if (!result.nextPageToken) break;
     pageToken = result.nextPageToken;
+    localStorage.setItem(backfillTokenKey(liver.channel_id), pageToken);
+
+    if (batchAdded >= 1000) {
+      const keepGoing = await askContinue({
+        liverName: liver.name,
+        addedInBatch: batchAdded,
+        totalCount,
+        isResumePrompt: false,
+      });
+      if (!keepGoing) break;
+      batchAdded = 0;
+    }
   }
 
   return totalAdded;
@@ -154,7 +265,7 @@ export async function refreshLivers(livers: Liver[], onProgress?: (done: number,
   return { added, failed };
 }
 
-export async function listVideos(f: Filter, offset = 0, limit = 20): Promise<{ rows: VideoItem[]; more: boolean }> {
+export async function listVideos(f: Filter, offset = 0, limit = 50): Promise<{ rows: VideoItem[]; more: boolean }> {
   const archive = await readArchive();
   const livers = new Map(archive.livers.map(l => [l.id, l]));
   const stampCounts = new Map<number, number>();
