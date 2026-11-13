@@ -10,6 +10,11 @@ export type FetchedVideo = {
   category: Category;
 };
 
+export type FetchResult = {
+  videos: FetchedVideo[];
+  nextPageToken?: string;
+};
+
 export type ChannelInfo = { channelId: string; name: string; avatar: string };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
@@ -82,7 +87,7 @@ const isoDuration = (s: string) => {
   return (Number(m[1] ?? 0) * 86400) + (Number(m[2] ?? 0) * 3600) + (Number(m[3] ?? 0) * 60) + Number(m[4] ?? 0);
 };
 
-async function viaRss(channelId: string): Promise<FetchedVideo[]> {
+async function viaRss(channelId: string): Promise<FetchResult> {
   const r = await fetch(`https://www.youtube.com/feeds/videos.xml?channel_id=${channelId}`);
   if (!r.ok) throw new Error("유튜브에서 영상 목록을 가져오지 못했어요");
   const xml = await r.text();
@@ -94,35 +99,53 @@ async function viaRss(channelId: string): Promise<FetchedVideo[]> {
     if (!id || !pub) continue;
     out.push({ youtubeId: id, title, publishedAt: new Date(pub).toISOString(), duration: 0, liveStatus: "none", isLive: false, category: classify(title, false, false) });
   }
-  return out;
+  return { videos: out };
 }
 
-async function viaApi(channelId: string, key: string, pages: number): Promise<FetchedVideo[]> {
+type VideoDetailResponse = {
+  items?: {
+    id: string;
+    snippet: { title: string; publishedAt: string; liveBroadcastContent?: string };
+    contentDetails: { duration: string };
+    liveStreamingDetails?: { actualStartTime?: string; scheduledStartTime?: string };
+  }[];
+};
+
+async function viaApi(channelId: string, key: string, pages: number, startToken = ""): Promise<FetchResult> {
   const playlist = "UU" + channelId.slice(2);
   const ids: string[] = [];
-  let token = "";
-  const maxLoop = pages > 0 ? pages : 100;
+  let token = startToken;
+  let nextPageToken: string | undefined;
+
+  const maxLoop = Math.min(Math.max(pages, 1), 10);
   for (let i = 0; i < maxLoop; i++) {
-    const r = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50&playlistId=${playlist}&key=${key}${token ? `&pageToken=${token}` : ""}`);
+    const r = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=contentDetails&maxResults=50&playlistId=${playlist}&key=${key}${token ? `&pageToken=${encodeURIComponent(token)}` : ""}`);
     if (!r.ok) throw new Error("YouTube API 키가 올바르지 않거나 사용 한도를 넘었어요");
     const j = (await r.json()) as { items?: { contentDetails?: { videoId?: string } }[]; nextPageToken?: string };
     for (const x of j.items ?? []) {
       if (x.contentDetails?.videoId) ids.push(x.contentDetails.videoId);
     }
-    if (!j.nextPageToken) break;
-    token = j.nextPageToken;
+    nextPageToken = j.nextPageToken;
+    if (!nextPageToken) break;
+    token = nextPageToken;
   }
-  const out: FetchedVideo[] = [];
+
+  const chunks: string[][] = [];
   for (let i = 0; i < ids.length; i += 50) {
-    const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=${ids.slice(i, i + 50).join(",")}&key=${key}`);
-    if (!r.ok) throw new Error("YouTube API 키가 올바르지 않거나 사용 한도를 넘었어요");
-    const j = (await r.json()) as { items: {
-      id: string;
-      snippet: { title: string; publishedAt: string; liveBroadcastContent?: string };
-      contentDetails: { duration: string };
-      liveStreamingDetails?: { actualStartTime?: string; scheduledStartTime?: string };
-    }[] };
-    for (const v of j.items) {
+    chunks.push(ids.slice(i, i + 50));
+  }
+
+  const detailResults = await Promise.all(
+    chunks.map(async chunk => {
+      const r = await fetch(`https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails,liveStreamingDetails&id=${chunk.join(",")}&key=${key}`);
+      if (!r.ok) throw new Error("YouTube API 키가 올바르지 않거나 사용 한도를 넘었어요");
+      return (await r.json()) as VideoDetailResponse;
+    })
+  );
+
+  const out: FetchedVideo[] = [];
+  for (const j of detailResults) {
+    for (const v of j.items ?? []) {
       const ld = v.liveStreamingDetails;
       const bc = v.snippet.liveBroadcastContent;
       const isLive = !!ld;
@@ -137,9 +160,10 @@ async function viaApi(channelId: string, key: string, pages: number): Promise<Fe
       });
     }
   }
-  return out;
+
+  return { videos: out, nextPageToken };
 }
 
-export function fetchVideos(channelId: string, key: string | undefined, pages = 0) {
-  return key ? viaApi(channelId, key, pages) : viaRss(channelId);
+export function fetchVideos(channelId: string, key: string | undefined, pages = 10, pageToken = "") {
+  return key ? viaApi(channelId, key, pages, pageToken) : viaRss(channelId);
 }
