@@ -62,7 +62,7 @@ export async function addLiver(url: string) {
   let added = 0;
   let warning = "";
   try {
-    added = (await refreshOne(row, 2));
+    added = (await refreshOne(row, 0));
   } catch (e) {
     warning = errText(e);
   }
@@ -83,7 +83,7 @@ type FetchedVideo = {
   liveStatus: LiveStatus; category: Category;
 };
 
-async function refreshOne(liver: Liver, pages: 1 | 2 = 1): Promise<number> {
+async function refreshOne(liver: Liver, pages = 0): Promise<number> {
   const result = await serverPost<{ videos: FetchedVideo[] }>("/sync", { channelId: liver.channel_id, pages });
   if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
   return modifyArchive(archive => {
@@ -122,7 +122,7 @@ export async function refreshLivers(livers: Liver[], onProgress?: (done: number,
   let added = 0;
   const failed: string[] = [];
   for (let i = 0; i < livers.length; i++) {
-    try { added += await refreshOne(livers[i]); }
+    try { added += await refreshOne(livers[i], 0); }
     catch { failed.push(livers[i].name); }
     onProgress?.(i + 1, livers.length);
   }
@@ -131,7 +131,7 @@ export async function refreshLivers(livers: Liver[], onProgress?: (done: number,
 
 /* --- 영상 ---------------------------------------------------------------- */
 
-export async function listVideos(f: Filter, offset = 0, limit = 40): Promise<{ rows: VideoItem[]; more: boolean }> {
+export async function listVideos(f: Filter, offset = 0, limit = 20): Promise<{ rows: VideoItem[]; more: boolean }> {
   const archive = await readArchive();
   const livers = new Map(archive.livers.map(l => [l.id, l]));
   const stampCounts = new Map<number, number>();
@@ -258,6 +258,11 @@ export function useVideos(f: Filter, reloadKey = 0) {
   const toggleFavorite = async (v: VideoItem) => {
     const next = !v.favorite;
     setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: next ? 1 : 0 } : x));
+    try { await updateVideo(v.id, { favorite: next }); }
+    catch (e) { setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: v.favorite } : x)); setError(errText(e)); }
+  };
+  return { rows, more, loading, error, loadMore, toggleFavorite };
+}
     try { await updateVideo(v.id, { favorite: next }); }
     catch (e) { setRows(r => r.map(x => x.id === v.id ? { ...x, favorite: v.favorite } : x)); setError(errText(e)); }
   };
