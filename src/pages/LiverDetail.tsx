@@ -1,11 +1,11 @@
 import {
   BookOpen,
+  Check,
   ChevronLeft,
   ExternalLink,
-  ListVideo,
   Palette,
   Pencil,
-  RefreshCw,
+  Plus,
   Trash2,
   Youtube,
 } from "lucide-react";
@@ -18,34 +18,14 @@ import {
   normalizeTwitterUrl,
   normalizeWikiUrl,
 } from "../components/LiverForm";
-import { Avatar, PageHead, VideoList } from "../components/ui";
+import { Avatar, PageHead } from "../components/ui";
 import {
   deleteLiver,
   errText,
-  type Category,
-  type Filter,
   getLiver,
-  refreshLivers,
   updateLiverProfile,
   useFetch,
-  useVideos,
 } from "../lib/client";
-
-type YtTab = "video" | "shorts" | "live" | "playlists";
-type SubFilter = "all" | "song" | "kirinuki";
-
-const TABS: [YtTab, string][] = [
-  ["video", "동영상"],
-  ["shorts", "Shorts"],
-  ["live", "라이브"],
-  ["playlists", "재생목록"],
-];
-
-const SUB_CHIPS: [SubFilter, string][] = [
-  ["all", "전체"],
-  ["song", "노래"],
-  ["kirinuki", "키리누키"],
-];
 
 function formatDisplayDate(raw?: string): string {
   if (!raw) return "-";
@@ -80,33 +60,46 @@ function calcElapsedDays(raw?: string): string {
   return `D${diff}`;
 }
 
+type InlineField =
+  | null
+  | "birthday"
+  | "oshi_mark"
+  | "fan_name"
+  | "official_color"
+  | "twitter_add"
+  | "nijiwiki";
+
 export default function LiverDetail() {
   const { id = "" } = useParams();
   const nav = useNavigate();
   const { data: liver, error, reload } = useFetch(() => getLiver(Number(id)), [id]);
   const [editing, setEditing] = useState(false);
-  const [tab, setTab] = useState<YtTab>("video");
-  const [sub, setSub] = useState<SubFilter>("all");
-  const [key, setKey] = useState(0);
-  const [busy, setBusy] = useState(false);
   const [status, setStatus] = useState("");
 
-  const params: Filter = { liver: Number(id) };
-  if (tab !== "playlists") {
-    params.ytType = tab;
-    if (sub !== "all") params.category = sub as Category;
-  }
-  const list = useVideos(params, key);
+  /* 인라인 바로 입력 상태 */
+  const [activeField, setActiveField] = useState<InlineField>(null);
+  const [draft, setDraft] = useState("");
 
-  const refresh = async () => {
+  const startInline = (field: Exclude<InlineField, null>, initialValue = "") => {
+    setActiveField(field);
+    setDraft(initialValue);
+  };
+
+  const cancelInline = () => {
+    setActiveField(null);
+    setDraft("");
+  };
+
+  const saveQuick = async (patch: Parameters<typeof updateLiverProfile>[1]) => {
     if (!liver) return;
-    setBusy(true);
-    setStatus("");
-    const r = await refreshLivers([liver]);
-    setStatus(r.failed.length ? "가져오지 못했어요. 잠시 뒤 다시 눌러 주세요" : `새 영상 ${r.added}개`);
-    setKey(k => k + 1);
-    reload();
-    setBusy(false);
+    try {
+      await updateLiverProfile(liver.id, patch);
+      setActiveField(null);
+      setDraft("");
+      reload();
+    } catch (e) {
+      setStatus(errText(e));
+    }
   };
 
   const remove = async () => {
@@ -120,34 +113,20 @@ export default function LiverDetail() {
     }
   };
 
-  const toggleMembership = async () => {
+  const toggleMembership = () => {
     if (!liver) return;
-    try {
-      await updateLiverProfile(liver.id, { membership: !liver.membership });
-      reload();
-    } catch (e) {
-      setStatus(errText(e));
-    }
+    saveQuick({ membership: !liver.membership });
   };
 
-  const toggleThemeColor = async () => {
+  const toggleThemeColor = () => {
     if (!liver) return;
-    try {
-      await updateLiverProfile(liver.id, { use_theme_color: !liver.use_theme_color });
-      reload();
-    } catch (e) {
-      setStatus(errText(e));
-    }
-  };
-
-  const switchTab = (t: YtTab) => {
-    setTab(t);
-    setSub("all");
+    saveQuick({ use_theme_color: !liver.use_theme_color });
   };
 
   const officialHex = normalizeHexColor(liver?.official_color || "");
   const themeHex = liver?.use_theme_color && officialHex ? officialHex : "";
 
+  /* 상단 연필 버튼 클릭 시 전체 수정 화면 */
   if (editing && liver) {
     return (
       <>
@@ -171,7 +150,6 @@ export default function LiverDetail() {
               setStatus(message);
               setEditing(false);
               reload();
-              setKey(k => k + 1);
             }}
             onCancel={() => setEditing(false)}
           />
@@ -212,15 +190,6 @@ export default function LiverDetail() {
             </button>
             <button
               type="button"
-              onClick={refresh}
-              disabled={busy}
-              aria-label="새로고침"
-              className="grid h-10 w-10 place-items-center rounded-full text-ink-2 hover:bg-ground-2 disabled:opacity-50"
-            >
-              <RefreshCw size={18} className={busy ? "animate-spin" : ""} />
-            </button>
-            <button
-              type="button"
               onClick={remove}
               aria-label="라이버 삭제"
               className="grid h-10 w-10 place-items-center rounded-full text-ink-2 hover:bg-ground-2"
@@ -236,24 +205,28 @@ export default function LiverDetail() {
           {error}
         </p>
       )}
+      {status && (
+        <p role="status" className="px-4 pt-3 text-sm text-ink-2 md:px-8">
+          {status}
+        </p>
+      )}
 
-      {/* 라이버 프로필 카드 */}
       {liver && (
         <section
-          className="border-b border-line px-4 py-5 md:px-8"
+          className="px-4 py-5 pb-12 md:px-8"
           style={
             themeHex
-              ? { background: `linear-gradient(180deg, ${themeHex}14 0%, transparent 100%)` }
+              ? { background: `linear-gradient(180deg, ${themeHex}16 0%, transparent 100%)` }
               : undefined
           }
         >
-          {/* 상단: 프로필 사진 + 일본 이름 / 한국 이름 */}
+          {/* 1. 상단 프로필 사진 + 일본 이름 / 한국 이름 */}
           <div className="flex items-center gap-4">
             <span
               className="rounded-full p-0.5"
-              style={themeHex ? { boxShadow: `0 0 0 2px ${themeHex}` } : undefined}
+              style={themeHex ? { boxShadow: `0 0 0 2.5px ${themeHex}` } : undefined}
             >
-              <Avatar src={liver.avatar} name={nameJa} size={74} isLive={liver.is_live} />
+              <Avatar src={liver.avatar} name={nameJa} size={76} isLive={liver.is_live} />
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2">
@@ -268,18 +241,53 @@ export default function LiverDetail() {
             </div>
           </div>
 
-          {/* 4개의 칸: 생일 / 데뷔일 / 입덕일 / 멤버십 */}
-          <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-            <div className="flex flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center">
-              <span className="text-[11px] text-ink-3">생일</span>
-              <span className="mt-0.5 text-sm font-semibold text-ink tabular-nums">
-                {formatBirthday(liver.birthday)}
-              </span>
-            </div>
+          {/* 2. 생일 / 데뷔일 / 입덕일 / 멤버십 4칸 (클릭 시 바로 설정) */}
+          <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+            {/* 생일 칸 */}
+            {activeField === "birthday" ? (
+              <div className="flex flex-col items-center justify-center rounded-xl border-2 border-accent bg-ground px-2 py-2 text-center">
+                <span className="text-[11px] text-ink-3">생일 (월.일)</span>
+                <div className="mt-1 flex w-full items-center gap-1">
+                  <input
+                    autoFocus
+                    type="text"
+                    value={draft}
+                    onChange={e => setDraft(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === "Enter") saveQuick({ birthday: draft });
+                      if (e.key === "Escape") cancelInline();
+                    }}
+                    placeholder="11.10"
+                    maxLength={10}
+                    className="h-7 min-w-0 flex-1 rounded border border-line bg-field px-1.5 text-center text-xs font-semibold"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => saveQuick({ birthday: draft })}
+                    aria-label="생일 저장"
+                    className="grid h-7 w-7 shrink-0 place-items-center rounded bg-accent text-on-accent"
+                  >
+                    <Check size={13} />
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startInline("birthday", liver.birthday || "")}
+                className="flex min-h-[74px] flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center transition hover:bg-ground-2/70"
+              >
+                <span className="text-[11px] text-ink-3">생일</span>
+                <span className="mt-1 text-sm font-semibold text-ink tabular-nums">
+                  {formatBirthday(liver.birthday)}
+                </span>
+              </button>
+            )}
 
-            <div className="flex flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center">
+            {/* 데뷔일 칸 (탭하면 OS 날짜 선택창 바로 오픈) */}
+            <label className="relative flex min-h-[74px] cursor-pointer flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center transition hover:bg-ground-2/70">
               <span className="text-[11px] text-ink-3">데뷔일</span>
-              <span className="mt-0.5 text-xs font-semibold text-ink tabular-nums">
+              <span className="mt-1 text-xs font-semibold text-ink tabular-nums">
                 {formatDisplayDate(liver.debut_date)}
               </span>
               {debutDays && (
@@ -290,11 +298,19 @@ export default function LiverDetail() {
                   {debutDays}
                 </span>
               )}
-            </div>
+              <input
+                type="date"
+                aria-label="데뷔일 선택"
+                value={liver.debut_date || ""}
+                onChange={e => saveQuick({ debut_date: e.target.value })}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
 
-            <div className="flex flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center">
+            {/* 입덕일 칸 (탭하면 OS 날짜 선택창 바로 오픈) */}
+            <label className="relative flex min-h-[74px] cursor-pointer flex-col items-center justify-center rounded-xl border border-line bg-ground px-2 py-2.5 text-center transition hover:bg-ground-2/70">
               <span className="text-[11px] text-ink-3">입덕일</span>
-              <span className="mt-0.5 text-xs font-semibold text-ink tabular-nums">
+              <span className="mt-1 text-xs font-semibold text-ink tabular-nums">
                 {formatDisplayDate(liver.oshi_date)}
               </span>
               {oshiDays && (
@@ -305,8 +321,16 @@ export default function LiverDetail() {
                   {oshiDays}
                 </span>
               )}
-            </div>
+              <input
+                type="date"
+                aria-label="입덕일 선택"
+                value={liver.oshi_date || ""}
+                onChange={e => saveQuick({ oshi_date: e.target.value })}
+                className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+              />
+            </label>
 
+            {/* 멤버십 칸 (탭하면 즉시 ON/OFF + 공식색 테두리 반영) */}
             <button
               type="button"
               onClick={toggleMembership}
@@ -320,29 +344,142 @@ export default function LiverDetail() {
                     }
                   : undefined
               }
-              className={`flex items-center justify-center rounded-xl border bg-ground px-2 py-2.5 text-sm font-semibold transition ${
-                liver.membership ? "border-accent text-ink" : "border-line text-ink-3 hover:bg-ground-2"
+              className={`flex min-h-[74px] items-center justify-center rounded-xl border bg-ground px-2 py-2.5 text-sm font-semibold transition ${
+                liver.membership ? "border-accent text-ink" : "border-line text-ink-3 hover:bg-ground-2/70"
               }`}
             >
               멤버십
             </button>
           </div>
 
-          {/* 오시마크 / 팬네임 / 공식색 + 테마 설정 */}
-          <div className="mt-3.5 space-y-1.5 rounded-xl border border-line bg-ground/80 px-3.5 py-3 text-sm">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-ink-3">오시마크</span>
-              <span className="font-medium text-ink">{liver.oshi_mark || "-"}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-ink-3">팬네임</span>
-              <span className="font-medium text-ink">{liver.fan_name || "-"}</span>
-            </div>
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-ink-3">공식색</span>
-              <div className="flex items-center gap-2">
-                {officialHex ? (
-                  <>
+          {/* 3. 오시마크 / 팬네임 / 공식색 (각각 칸 구분 + 클릭 시 바로 입력) */}
+          <div className="mt-4 space-y-2">
+            {/* 오시마크 칸 */}
+            {activeField === "oshi_mark" ? (
+              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3.5">
+                <span className="shrink-0 text-sm text-ink-3">오시마크</span>
+                <input
+                  autoFocus
+                  type="text"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") saveQuick({ oshi_mark: draft });
+                    if (e.key === "Escape") cancelInline();
+                  }}
+                  placeholder="예: 🎲"
+                  className="h-8 min-w-0 flex-1 bg-transparent text-right text-sm font-medium text-ink focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => saveQuick({ oshi_mark: draft })}
+                  aria-label="오시마크 저장"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent"
+                >
+                  <Check size={15} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startInline("oshi_mark", liver.oshi_mark || "")}
+                className="flex h-12 w-full items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm transition hover:bg-ground-2/70"
+              >
+                <span className="text-ink-3">오시마크</span>
+                <span className="font-medium text-ink">{liver.oshi_mark || "-"}</span>
+              </button>
+            )}
+
+            {/* 팬네임 칸 */}
+            {activeField === "fan_name" ? (
+              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3.5">
+                <span className="shrink-0 text-sm text-ink-3">팬네임</span>
+                <input
+                  autoFocus
+                  type="text"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") saveQuick({ fan_name: draft });
+                    if (e.key === "Escape") cancelInline();
+                  }}
+                  placeholder="팬네임 입력"
+                  className="h-8 min-w-0 flex-1 bg-transparent text-right text-sm font-medium text-ink focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => saveQuick({ fan_name: draft })}
+                  aria-label="팬네임 저장"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent"
+                >
+                  <Check size={15} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startInline("fan_name", liver.fan_name || "")}
+                className="flex h-12 w-full items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm transition hover:bg-ground-2/70"
+              >
+                <span className="text-ink-3">팬네임</span>
+                <span className="font-medium text-ink">{liver.fan_name || "-"}</span>
+              </button>
+            )}
+
+            {/* 공식색 칸 */}
+            {activeField === "official_color" ? (
+              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3.5">
+                <span className="shrink-0 text-sm text-ink-3">공식색</span>
+                <input
+                  type="color"
+                  aria-label="공식색 피커"
+                  value={normalizeHexColor(draft) || "#6366F1"}
+                  onChange={e => setDraft(e.target.value.toUpperCase())}
+                  className="h-7 w-8 shrink-0 cursor-pointer rounded border border-line bg-transparent p-0.5"
+                />
+                <input
+                  autoFocus
+                  type="text"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      const hex = normalizeHexColor(draft);
+                      saveQuick({
+                        official_color: hex || draft.trim(),
+                        use_theme_color: hex ? liver.use_theme_color : false,
+                      });
+                    }
+                    if (e.key === "Escape") cancelInline();
+                  }}
+                  placeholder="#FF0000"
+                  maxLength={10}
+                  className="h-8 min-w-0 flex-1 bg-transparent text-right text-sm font-medium uppercase text-ink focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() => {
+                    const hex = normalizeHexColor(draft);
+                    saveQuick({
+                      official_color: hex || draft.trim(),
+                      use_theme_color: hex ? liver.use_theme_color : false,
+                    });
+                  }}
+                  aria-label="공식색 저장"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent"
+                >
+                  <Check size={15} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex h-12 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm">
+                <button
+                  type="button"
+                  onClick={() => startInline("official_color", liver.official_color || "")}
+                  className="flex h-full flex-1 items-center justify-between pr-2 text-left"
+                >
+                  <span className="text-ink-3">공식색</span>
+                  {officialHex ? (
                     <span className="flex items-center gap-1.5 font-medium text-ink">
                       <span
                         className="inline-block h-3.5 w-3.5 rounded-full border border-black/15"
@@ -350,48 +487,51 @@ export default function LiverDetail() {
                       />
                       {officialHex}
                     </span>
-                    <button
-                      type="button"
-                      onClick={toggleThemeColor}
-                      style={
-                        liver.use_theme_color
-                          ? { backgroundColor: officialHex, borderColor: officialHex, color: "#fff" }
-                          : undefined
-                      }
-                      className={`flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-xs font-medium transition ${
-                        liver.use_theme_color
-                          ? "border-accent bg-accent text-white"
-                          : "border-line text-ink-2 hover:bg-ground-2"
-                      }`}
-                    >
-                      <Palette size={12} />
-                      {liver.use_theme_color ? "테마 적용 중" : "테마 적용"}
-                    </button>
-                  </>
-                ) : (
-                  <span className="text-ink-3">-</span>
+                  ) : (
+                    <span className="font-medium text-ink">-</span>
+                  )}
+                </button>
+
+                {officialHex && (
+                  <button
+                    type="button"
+                    onClick={toggleThemeColor}
+                    style={
+                      liver.use_theme_color
+                        ? { backgroundColor: officialHex, borderColor: officialHex, color: "#fff" }
+                        : undefined
+                    }
+                    className={`ml-2 flex shrink-0 items-center gap-1 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                      liver.use_theme_color
+                        ? "border-accent bg-accent text-white"
+                        : "border-line text-ink-2 hover:bg-ground-2"
+                    }`}
+                  >
+                    <Palette size={12} />
+                    {liver.use_theme_color ? "테마 적용 중" : "테마 적용"}
+                  </button>
                 )}
               </div>
-            </div>
+            )}
           </div>
 
-          {/* 외부 링크 버튼: 유튜브 / 트위터(복수) / 니지위키 */}
-          <div className="mt-3 space-y-2">
+          {/* 4. 외부 링크 칸: 유튜브 / 트위터(등록 및 부계정 추가) / 니지위키(등록 및 이동) */}
+          <div className="mt-4 space-y-2.5">
             {/* 유튜브 연동 링크 */}
             <a
               href={`https://www.youtube.com/channel/${liver.channel_id}`}
               target="_blank"
               rel="noreferrer"
-              className="flex h-11 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink hover:bg-ground-2"
+              className="flex h-12 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink transition hover:bg-ground-2/70"
             >
               <span className="flex items-center gap-2.5 truncate">
                 <Youtube size={18} className="shrink-0 text-rose-600" />
-                <span className="truncate">유튜브 채널 홈 열기</span>
+                <span className="truncate">유튜브 연동 링크</span>
               </span>
               <ExternalLink size={15} className="shrink-0 text-ink-3" />
             </a>
 
-            {/* 트위터 연동 링크 (여러 계정 지원) */}
+            {/* 트위터 연동 링크 (등록된 계정 목록 + 바로 추가) */}
             {twitters.map((url, idx) => {
               const href = normalizeTwitterUrl(url);
               return (
@@ -400,14 +540,16 @@ export default function LiverDetail() {
                   href={href}
                   target="_blank"
                   rel="noreferrer"
-                  className="flex h-11 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink hover:bg-ground-2"
+                  className="flex h-12 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink transition hover:bg-ground-2/70"
                 >
                   <span className="flex items-center gap-2.5 truncate">
                     <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black text-xs font-bold text-white">
                       𝕏
                     </span>
                     <span className="truncate">
-                      {twitters.length > 1 ? `트위터 (${idx === 0 ? "본계정" : `계정 ${idx + 1}`}) · ` : "트위터 · "}
+                      {twitters.length > 1
+                        ? `트위터 (${idx === 0 ? "본계정" : `계정 ${idx + 1}`}) · `
+                        : "트위터 · "}
                       {extractTwitterHandle(href)}
                     </span>
                   </span>
@@ -416,145 +558,127 @@ export default function LiverDetail() {
               );
             })}
 
-            {/* 니지위키 링크 */}
-            {liver.nijiwiki_url && (
-              <a
-                href={normalizeWikiUrl(liver.nijiwiki_url)}
-                target="_blank"
-                rel="noreferrer"
-                className="flex h-11 items-center justify-between rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink hover:bg-ground-2"
-              >
-                <span className="flex items-center gap-2.5 truncate">
-                  <BookOpen size={17} className="shrink-0 text-sky-600" />
-                  <span className="truncate">니지위키 (にじさんじ Wiki)</span>
+            {activeField === "twitter_add" ? (
+              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3">
+                <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black text-xs font-bold text-white">
+                  𝕏
                 </span>
-                <ExternalLink size={15} className="shrink-0 text-ink-3" />
-              </a>
+                <input
+                  autoFocus
+                  type="text"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter" && draft.trim()) {
+                      const next = normalizeTwitterUrl(draft);
+                      saveQuick({
+                        twitter_urls: twitters.includes(next) ? twitters : [...twitters, next],
+                      });
+                    }
+                    if (e.key === "Escape") cancelInline();
+                  }}
+                  placeholder="https://x.com/... 또는 @아이디"
+                  className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink focus:outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={!draft.trim()}
+                  onClick={() => {
+                    const next = normalizeTwitterUrl(draft);
+                    saveQuick({
+                      twitter_urls: twitters.includes(next) ? twitters : [...twitters, next],
+                    });
+                  }}
+                  aria-label="트위터 저장"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent disabled:opacity-40"
+                >
+                  <Check size={15} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startInline("twitter_add", "")}
+                className="flex h-12 w-full items-center justify-between rounded-xl border border-dashed border-line-strong bg-ground px-3.5 text-sm font-medium text-ink-2 transition hover:bg-ground-2/70"
+              >
+                <span className="flex items-center gap-2.5">
+                  <span className="grid h-5 w-5 shrink-0 place-items-center rounded bg-black/80 text-xs font-bold text-white">
+                    𝕏
+                  </span>
+                  <span>
+                    {twitters.length === 0 ? "트위터 연동 링크 등록하기" : "트위터 부계정 추가하기"}
+                  </span>
+                </span>
+                <Plus size={16} className="shrink-0 text-ink-3" />
+              </button>
+            )}
+
+            {/* 니지위키 링크 (미등록 시 클릭하여 바로 등록, 등록 시 바로 이동) */}
+            {activeField === "nijiwiki" ? (
+              <div className="flex h-12 items-center gap-2 rounded-xl border-2 border-accent bg-ground px-3">
+                <BookOpen size={17} className="shrink-0 text-sky-600" />
+                <input
+                  autoFocus
+                  type="text"
+                  value={draft}
+                  onChange={e => setDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === "Enter") {
+                      saveQuick({ nijiwiki_url: draft.trim() ? normalizeWikiUrl(draft) : "" });
+                    }
+                    if (e.key === "Escape") cancelInline();
+                  }}
+                  placeholder="https://wikiwiki.jp/nijisanji/..."
+                  className="h-8 min-w-0 flex-1 bg-transparent text-sm text-ink focus:outline-none"
+                />
+                <button
+                  type="button"
+                  onClick={() =>
+                    saveQuick({ nijiwiki_url: draft.trim() ? normalizeWikiUrl(draft) : "" })
+                  }
+                  aria-label="니지위키 저장"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-accent text-on-accent"
+                >
+                  <Check size={15} />
+                </button>
+              </div>
+            ) : liver.nijiwiki_url ? (
+              <div className="flex h-12 items-center rounded-xl border border-line bg-ground px-3.5 text-sm font-medium text-ink">
+                <a
+                  href={normalizeWikiUrl(liver.nijiwiki_url)}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="flex h-full min-w-0 flex-1 items-center gap-2.5"
+                >
+                  <BookOpen size={17} className="shrink-0 text-sky-600" />
+                  <span className="truncate">니지위키 링크 열기</span>
+                  <ExternalLink size={15} className="ml-auto shrink-0 text-ink-3" />
+                </a>
+                <button
+                  type="button"
+                  onClick={() => startInline("nijiwiki", liver.nijiwiki_url || "")}
+                  aria-label="니지위키 링크 수정"
+                  className="ml-2 grid h-8 w-8 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-ground-2"
+                >
+                  <Pencil size={14} />
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => startInline("nijiwiki", "")}
+                className="flex h-12 w-full items-center justify-between rounded-xl border border-dashed border-line-strong bg-ground px-3.5 text-sm font-medium text-ink-2 transition hover:bg-ground-2/70"
+              >
+                <span className="flex items-center gap-2.5">
+                  <BookOpen size={17} className="shrink-0 text-sky-600" />
+                  <span>니지위키 링크 등록하기</span>
+                </span>
+                <Plus size={16} className="shrink-0 text-ink-3" />
+              </button>
             )}
           </div>
         </section>
       )}
-
-      {/* 유튜브 채널 탭: 동영상 / Shorts / 라이브 / 재생목록 */}
-      <div
-        className="flex overflow-x-auto border-b border-line px-4 md:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-        role="tablist"
-      >
-        {TABS.map(([k, label]) => {
-          const active = tab === k;
-          return (
-            <button
-              key={k}
-              type="button"
-              role="tab"
-              aria-selected={active}
-              onClick={() => switchTab(k)}
-              style={
-                active && themeHex
-                  ? { borderColor: themeHex, color: themeHex }
-                  : undefined
-              }
-              className={`h-12 shrink-0 flex-1 border-b-2 px-4 text-sm font-medium md:flex-none md:px-7 ${
-                active ? "border-accent text-accent" : "border-transparent text-ink-3"
-              }`}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="px-4 pt-3 md:px-8">
-        {status && (
-          <p role="status" className="mb-3 text-sm text-ink-2">
-            {status}
-          </p>
-        )}
-
-        {tab === "playlists" ? (
-          <div>
-            {!liver?.playlists || liver.playlists.length === 0 ? (
-              <p className="py-12 text-center text-sm text-ink-2">
-                불러온 재생목록이 없어요. 우측 상단 새로고침 버튼을 눌러 채널 재생목록을 가져와 보세요.
-              </p>
-            ) : (
-              <ul className="divide-y divide-line lg:grid lg:grid-cols-2 lg:gap-x-8 lg:divide-y-0">
-                {liver.playlists.map(pl => (
-                  <li key={pl.id} className="py-3">
-                    <a
-                      href={`https://www.youtube.com/playlist?list=${pl.id}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="flex gap-3"
-                    >
-                      <div className="relative w-[42%] max-w-[180px] shrink-0">
-                        {pl.thumbnail ? (
-                          <img
-                            src={pl.thumbnail}
-                            alt=""
-                            loading="lazy"
-                            className="aspect-video w-full rounded-media bg-ground-2 object-cover"
-                          />
-                        ) : (
-                          <div className="grid aspect-video w-full place-items-center rounded-media bg-ground-2 text-ink-3">
-                            <ListVideo size={24} />
-                          </div>
-                        )}
-                        <span className="absolute bottom-1 right-1 flex items-center gap-1 rounded bg-black/75 px-1.5 py-0.5 text-[11px] text-white">
-                          <ListVideo size={12} /> {pl.itemCount}개
-                        </span>
-                      </div>
-                      <div className="flex min-w-0 flex-1 flex-col justify-center">
-                        <p className="line-clamp-2 text-[15px] font-medium leading-snug text-ink [word-break:keep-all]">
-                          {pl.title}
-                        </p>
-                        <span className="mt-1.5 text-xs text-ink-3">유튜브 재생목록 열기 ↗</span>
-                      </div>
-                    </a>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-        ) : (
-          <>
-            {(tab === "video" || tab === "live") && (
-              <div className="mb-1 flex flex-wrap gap-2" role="group">
-                {SUB_CHIPS.map(([k, label]) => {
-                  const active = sub === k;
-                  return (
-                    <button
-                      key={k}
-                      type="button"
-                      aria-pressed={active}
-                      onClick={() => setSub(k)}
-                      style={
-                        active && themeHex
-                          ? { backgroundColor: themeHex, borderColor: themeHex, color: "#fff" }
-                          : undefined
-                      }
-                      className={`h-9 rounded-full border px-3.5 text-sm ${
-                        active
-                          ? "border-accent bg-accent text-on-accent"
-                          : "border-line text-ink-2 hover:bg-ground-2"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            <VideoList
-              {...list}
-              showLiver={false}
-              onFavorite={list.toggleFavorite}
-              onMore={list.loadMore}
-              empty="해당하는 영상이 없어요. 우측 상단 새로고침 버튼을 눌러 최신 목록을 불러와 보세요."
-            />
-          </>
-        )}
-      </div>
     </div>
   );
 }
