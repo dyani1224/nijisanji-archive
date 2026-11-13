@@ -59,7 +59,7 @@ export async function addLiver(url: string) {
   let added = 0;
   let warning = "";
   try {
-    added = (await refreshOne(row, 0));
+    added = await refreshOne(row);
   } catch (e) {
     warning = errText(e);
   }
@@ -80,45 +80,74 @@ type FetchedVideo = {
   liveStatus: LiveStatus; category: Category;
 };
 
-async function refreshOne(liver: Liver, pages = 0): Promise<number> {
-  const result = await serverPost<{ videos: FetchedVideo[] }>("/sync", { channelId: liver.channel_id, pages });
-  if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
-  return modifyArchive(archive => {
-    const stored = archive.livers.find(l => l.id === liver.id);
-    if (!stored) return 0;
-    const known = new Map(archive.videos.filter(v => v.liver_id === liver.id).map(v => [v.youtube_id, v]));
-    let added = 0;
-    for (const item of result.videos) {
-      if (!item.youtubeId || !item.title || Number.isNaN(Date.parse(item.publishedAt))) continue;
-      const old = known.get(item.youtubeId);
-      if (old) {
-        old.title = item.title;
-        old.published_at = item.publishedAt;
-        old.duration = item.duration;
-        old.live_status = item.liveStatus;
-        if (!old.category_manual) old.category = item.category;
-      } else {
-        const fresh: VideoRecord = {
-          id: archive.nextId.video++, youtube_id: item.youtubeId, liver_id: liver.id,
-          title: item.title, published_at: item.publishedAt, duration: item.duration,
-          live_status: item.liveStatus, category: item.category, category_manual: false,
-          favorite: false, memo: "",
-        };
-        archive.videos.push(fresh);
-        known.set(item.youtubeId, fresh);
-        added++;
+async function refreshOne(liver: Liver): Promise<number> {
+  const initialArchive = await readArchive();
+  const existingIds = new Set(
+    initialArchive.videos.filter(v => v.liver_id === liver.id).map(v => v.youtube_id)
+  );
+  // 기존에 저장된 영상이 있으면 최신 2페이지(100개)씩만 확인, 없으면 10페이지(500개)씩 전체 백필
+  const isIncremental = existingIds.size > 0;
+  const pagesPerChunk = isIncremental ? 2 : 10;
+
+  let pageToken = "";
+  let totalAdded = 0;
+
+  for (let chunk = 0; chunk < 40; chunk++) {
+    const result = await serverPost<{ videos: FetchedVideo[]; nextPageToken?: string }>("/sync", {
+      channelId: liver.channel_id,
+      pages: pagesPerChunk,
+      pageToken,
+    });
+    if (!Array.isArray(result.videos)) throw new Error("영상 목록 응답이 올바르지 않아요.");
+
+    let hitExisting = false;
+    const chunkAdded = await modifyArchive(archive => {
+      const stored = archive.livers.find(l => l.id === liver.id);
+      if (!stored) return 0;
+      const known = new Map(archive.videos.filter(v => v.liver_id === liver.id).map(v => [v.youtube_id, v]));
+      let added = 0;
+      for (const item of result.videos) {
+        if (!item.youtubeId || !item.title || Number.isNaN(Date.parse(item.publishedAt))) continue;
+        const old = known.get(item.youtubeId);
+        if (old) {
+          hitExisting = true;
+          old.title = item.title;
+          old.published_at = item.publishedAt;
+          old.duration = item.duration;
+          old.live_status = item.liveStatus;
+          if (!old.category_manual) old.category = item.category;
+        } else {
+          const fresh: VideoRecord = {
+            id: archive.nextId.video++, youtube_id: item.youtubeId, liver_id: liver.id,
+            title: item.title, published_at: item.publishedAt, duration: item.duration,
+            live_status: item.liveStatus, category: item.category, category_manual: false,
+            favorite: false, memo: "",
+          };
+          archive.videos.push(fresh);
+          known.set(item.youtubeId, fresh);
+          added++;
+        }
       }
-    }
-    stored.last_fetched = new Date().toISOString();
-    return added;
-  });
+      stored.last_fetched = new Date().toISOString();
+      return added;
+    });
+
+    totalAdded += chunkAdded;
+
+    // 증분 업데이트 모드에서 이미 저장된 영상을 만났다면 더 과거 내역은 조회하지 않고 종료
+    if (isIncremental && hitExisting) break;
+    if (!result.nextPageToken) break;
+    pageToken = result.nextPageToken;
+  }
+
+  return totalAdded;
 }
 
 export async function refreshLivers(livers: Liver[], onProgress?: (done: number, total: number) => void) {
   let added = 0;
   const failed: string[] = [];
   for (let i = 0; i < livers.length; i++) {
-    try { added += await refreshOne(livers[i], 0); }
+    try { added += await refreshOne(livers[i]); }
     catch { failed.push(livers[i].name); }
     onProgress?.(i + 1, livers.length);
   }
