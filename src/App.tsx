@@ -1,5 +1,6 @@
 import { Heart, House, Settings, Users } from "lucide-react";
 import { NavLink, Outlet, ScrollRestoration } from "react-router";
+import { ContinueDialog } from "./components/ContinueDialog";
 
 const NAV = [
   { to: "/", label: "홈", icon: House, end: true },
@@ -24,6 +25,7 @@ export default function App() {
         </nav>
       </aside>
       <main className="pb-24 md:pb-10"><div className="mx-auto max-w-5xl"><Outlet /></div></main>
+      <ContinueDialog />
       <ScrollRestoration />
     </div>
   );
