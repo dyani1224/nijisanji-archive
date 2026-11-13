@@ -12,6 +12,7 @@ export type ChannelPlaylist = {
 export type Liver = {
   id: number;
   channel_id: string;
+  youtube_handle?: string;
   name: string;
   name_ja?: string;
   name_ko?: string;
