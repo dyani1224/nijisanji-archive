@@ -4,8 +4,7 @@ import { ago, clock } from "../lib/format";
 import { CATEGORY_LABEL, type Category, type VideoItem } from "../lib/client";
 
 const BADGE: Record<Category, string> = {
-  cover: "bg-indigo-50 text-indigo-800",
-  karaoke: "bg-emerald-50 text-emerald-800",
+  song: "bg-emerald-50 text-emerald-800",
   live: "bg-sky-50 text-sky-800",
   other: "bg-ground-2 text-ink-2",
 };
