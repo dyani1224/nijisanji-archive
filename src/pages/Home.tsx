@@ -1,8 +1,9 @@
-import { RefreshCw, X } from "lucide-react";
+import { ChevronLeft, RefreshCw, X } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { Avatar, Chips, PageHead, VideoList } from "../components/ui";
 import { errText, listLivers, refreshLivers, useFetch, useVideos, type Category, type Filter } from "../lib/client";
+import { ago } from "../lib/format";
 
 type FilterChip = "all" | Exclude<Category, "none">;
 
@@ -17,6 +18,7 @@ const CHIPS: [FilterChip, string][] = [
 export default function Home() {
   const [chip, setChip] = useState<FilterChip>("all");
   const [selectedLiver, setSelectedLiver] = useState<number | null>(null);
+  const [showAllLivers, setShowAllLivers] = useState(false);
   const [key, setKey] = useState(0);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -44,6 +46,84 @@ export default function Home() {
     setBusy(false);
   };
 
+  /* 홈 상단 '전체' 클릭 시: 라이버 탭으로 가지 않고 전체 채널 목록 표시 */
+  if (showAllLivers) {
+    return (
+      <>
+        <PageHead
+          back={
+            <button
+              type="button"
+              onClick={() => setShowAllLivers(false)}
+              aria-label="홈으로 돌아가기"
+              className="-ml-2 grid h-10 w-10 place-items-center rounded-full hover:bg-ground-2"
+            >
+              <ChevronLeft size={24} />
+            </button>
+          }
+          title="구독 채널 전체"
+        >
+          {selectedLiver && (
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedLiver(null);
+                setShowAllLivers(false);
+              }}
+              className="h-8 rounded-full border border-line px-3 text-xs font-medium text-ink-2 hover:bg-ground-2"
+            >
+              전체 영상 보기
+            </button>
+          )}
+        </PageHead>
+
+        <div className="px-4 pt-2 md:px-8">
+          {!livers || livers.length === 0 ? (
+            <p className="py-12 text-center text-sm text-ink-2">
+              등록된 라이버가 없어요. 하단 <Link to="/livers" className="text-accent underline">라이버 탭</Link>에서 추가해 주세요.
+            </p>
+          ) : (
+            <ul className="divide-y divide-line">
+              {livers.map(l => {
+                const displayName = l.name_ja || l.name;
+                const isSelected = selectedLiver === l.id;
+                return (
+                  <li key={l.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedLiver(isSelected ? null : l.id);
+                        setShowAllLivers(false);
+                      }}
+                      className="flex w-full items-center gap-3.5 py-3.5 text-left hover:bg-ground-2/60"
+                    >
+                      <Avatar src={l.avatar} name={displayName} size={52} isLive={l.is_live} />
+                      <span className="min-w-0 flex-1">
+                        <span className="flex items-center gap-2">
+                          <span className={`truncate text-base font-bold ${isSelected ? "text-accent" : "text-ink"}`}>
+                            {displayName}
+                          </span>
+                          {l.is_live && (
+                            <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                              라이브 중
+                            </span>
+                          )}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-ink-3">
+                          영상 {l.video_count ?? 0}개{l.last_fetched ? ` · 갱신 ${ago(l.last_fetched)}` : ""}
+                        </span>
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </>
+    );
+  }
+
   return (
     <>
       <PageHead title="최근 업데이트">
@@ -58,6 +138,7 @@ export default function Home() {
           <div className="flex flex-1 gap-3 overflow-x-auto px-4 py-3 md:px-8 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {livers.map(l => {
               const selected = selectedLiver === l.id;
+              const displayName = l.name_ja || l.name;
               return (
                 <button
                   key={l.id}
@@ -66,21 +147,22 @@ export default function Home() {
                   className="flex w-16 shrink-0 flex-col items-center gap-1.5 text-center"
                 >
                   <span className={`rounded-full p-0.5 transition ${selected ? "ring-2 ring-accent" : ""}`}>
-                    <Avatar src={l.avatar} name={l.name} size={52} isLive={l.is_live} />
+                    <Avatar src={l.avatar} name={displayName} size={52} isLive={l.is_live} />
                   </span>
                   <span className={`w-full truncate text-xs ${selected ? "font-semibold text-accent" : "text-ink-2"}`}>
-                    {l.name}
+                    {displayName}
                   </span>
                 </button>
               );
             })}
           </div>
-          <Link
-            to="/livers"
+          <button
+            type="button"
+            onClick={() => setShowAllLivers(true)}
             className="shrink-0 self-stretch flex items-center border-l border-line/60 bg-ground px-4 text-sm font-medium text-accent hover:bg-ground-2"
           >
             전체
-          </Link>
+          </button>
         </div>
       )}
 
@@ -88,21 +170,16 @@ export default function Home() {
         {activeLiver && (
           <div className="mb-3 flex items-center justify-between rounded-control bg-ground-2 px-3 py-2 text-sm">
             <span className="truncate font-medium text-ink">
-              {activeLiver.name} 기록만 보는 중
+              {activeLiver.name_ja || activeLiver.name} 영상만 보는 중
             </span>
-            <div className="flex shrink-0 items-center gap-2">
-              <Link to={`/livers/${activeLiver.id}`} className="text-xs font-medium text-accent hover:underline">
-                채널 홈 →
-              </Link>
-              <button
-                type="button"
-                onClick={() => setSelectedLiver(null)}
-                aria-label="필터 해제"
-                className="grid h-7 w-7 place-items-center rounded-full text-ink-2 hover:bg-ground"
-              >
-                <X size={15} />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => setSelectedLiver(null)}
+              aria-label="필터 해제"
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-full text-ink-2 hover:bg-ground"
+            >
+              <X size={15} />
+            </button>
           </div>
         )}
 
