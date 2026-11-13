@@ -3,7 +3,6 @@ import { useState } from "react";
 import { Link } from "react-router";
 import { Avatar, Chips, PageHead, VideoList } from "../components/ui";
 import { errText, listLivers, refreshLivers, useFetch, useVideos, type Category, type Filter } from "../lib/client";
-import { ago } from "../lib/format";
 
 type FilterChip = "all" | Exclude<Category, "none">;
 
@@ -83,7 +82,8 @@ export default function Home() {
           ) : (
             <ul className="divide-y divide-line">
               {livers.map(l => {
-                const displayName = l.name_ja || l.name;
+                const ja = l.name_ja || l.name;
+                const ko = l.name_ko || "";
                 const isSelected = selectedLiver === l.id;
                 return (
                   <li key={l.id}>
@@ -95,11 +95,11 @@ export default function Home() {
                       }}
                       className="flex w-full items-center gap-3.5 py-3.5 text-left hover:bg-ground-2/60"
                     >
-                      <Avatar src={l.avatar} name={displayName} size={52} isLive={l.is_live} />
+                      <Avatar src={l.avatar} name={ja} size={52} isLive={l.is_live} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-center gap-2">
                           <span className={`truncate text-base font-bold ${isSelected ? "text-accent" : "text-ink"}`}>
-                            {displayName}
+                            {ja}
                           </span>
                           {l.is_live && (
                             <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
@@ -107,9 +107,7 @@ export default function Home() {
                             </span>
                           )}
                         </span>
-                        <span className="mt-0.5 block text-xs text-ink-3">
-                          영상 {l.video_count ?? 0}개{l.last_fetched ? ` · 갱신 ${ago(l.last_fetched)}` : ""}
-                        </span>
+                        {ko && <span className="mt-0.5 block truncate text-xs text-ink-2">{ko}</span>}
                       </span>
                     </button>
                   </li>
@@ -124,7 +122,7 @@ export default function Home() {
 
   return (
     <>
-      <PageHead title="최근 업데이트">
+      <PageHead title="Archive">
         <button type="button" onClick={refresh} disabled={busy} className="flex h-10 items-center gap-1.5 rounded-control border border-line px-3 text-sm hover:bg-ground-2 disabled:opacity-50">
           <RefreshCw size={16} className={busy ? "animate-spin" : ""} aria-hidden />새로고침
         </button>
