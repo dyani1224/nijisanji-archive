@@ -1,4 +1,4 @@
-export type Category = "cover" | "karaoke" | "live" | "other";
+import { classify, type Category } from "../shared/category";
 
 export type FetchedVideo = {
   youtubeId: string;
@@ -13,18 +13,6 @@ export type FetchedVideo = {
 export type ChannelInfo = { channelId: string; name: string; avatar: string };
 
 const UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124 Safari/537.36";
-
-const KARAOKE = /歌枠|カラオケ|karaoke|歌配信|歌雑談|歌回|singing|sing stream|うたわく|歌謡/i;
-const COVER = /歌ってみた|歌わせて|cover|カバー|covered|オリジナル|original song|\bmv\b|music video|【mv/i;
-const LIVE_WORDS = /配信|生放送|雑談|同時視聴|ゲーム|live|stream|枠|archive|アーカイブ|#\d+|part\s*\d+/i;
-
-export function classify(title: string, isLive: boolean, hasLiveInfo: boolean): Category {
-  if (KARAOKE.test(title)) return "karaoke";
-  if (COVER.test(title)) return "cover";
-  if (isLive) return "live";
-  if (!hasLiveInfo && LIVE_WORDS.test(title)) return "live";
-  return "other";
-}
 
 const decode = (s: string) =>
   s.replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'")
