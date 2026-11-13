@@ -29,10 +29,11 @@ app.post("/sync", async c => {
   if (!/^UC[\w-]{22}$/.test(channelId)) {
     return c.json({ error: "올바른 유튜브 채널이 아니에요" }, 400);
   }
-  const pages = typeof b.pages === "number" && b.pages > 0 ? Math.min(b.pages, 100) : 0;
+  const pages = typeof b.pages === "number" && b.pages > 0 ? Math.min(b.pages, 10) : 10;
+  const pageToken = typeof b.pageToken === "string" ? b.pageToken : "";
   try {
-    const videos = await fetchVideos(channelId, process.env.YOUTUBE_API_KEY || undefined, pages);
-    return c.json({ videos });
+    const result = await fetchVideos(channelId, process.env.YOUTUBE_API_KEY || undefined, pages, pageToken);
+    return c.json(result);
   } catch (e) {
     return c.json({ error: e instanceof Error ? e.message : "영상 목록을 가져오지 못했어요" }, 502);
   }
