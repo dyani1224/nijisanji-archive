@@ -1,3 +1,4 @@
+import { ChevronLeft } from "lucide-react";
 import { useState } from "react";
 import { Link } from "react-router";
 import { Avatar, PageHead } from "../components/ui";
@@ -27,7 +28,10 @@ export default function Livers() {
 
   return (
     <>
-      <PageHead title="라이버" />
+      <PageHead
+        back={<Link to="/" aria-label="홈으로" className="-ml-2 grid h-10 w-10 place-items-center rounded-full hover:bg-ground-2"><ChevronLeft size={24} /></Link>}
+        title="전체 라이버"
+      />
       <div className="px-4 pt-4 md:px-8">
         <form onSubmit={add}>
           <label htmlFor="url" className="text-sm text-ink-2">유튜브 채널 링크</label>
@@ -46,9 +50,16 @@ export default function Livers() {
           {data?.map(l => (
             <li key={l.id} className="border-b border-line">
               <Link to={`/livers/${l.id}`} className="flex items-center gap-3 py-3">
-                <Avatar src={l.avatar} name={l.name} size={48} />
+                <Avatar src={l.avatar} name={l.name} size={48} isLive={l.is_live} />
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">{l.name}</span>
+                  <span className="flex items-center gap-2">
+                    <span className="truncate font-medium">{l.name}</span>
+                    {l.is_live && (
+                      <span className="shrink-0 rounded bg-rose-600 px-1.5 py-0.5 text-[11px] font-semibold text-white">
+                        라이브 중
+                      </span>
+                    )}
+                  </span>
                   <span className="block text-xs text-ink-3">영상 {l.video_count ?? 0}개{l.last_fetched ? `, 갱신 ${ago(l.last_fetched)}` : ""}</span>
                 </span>
               </Link>
