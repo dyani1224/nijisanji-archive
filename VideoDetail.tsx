@@ -8,10 +8,19 @@ import { clock, dateKo, parseClock, parseTimestampList } from "../lib/format";
 
 type StampEntryMode = "single" | "bulk";
 
+/** 모바일 숫자 키패드에서 콜론을 입력하지 못해도 숫자만으로 시간을 적을 수 있게 한다. */
+function normalizeClockInput(value: string) {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed) || trimmed.length <= 2) return trimmed;
+  if (trimmed.length <= 4) return `${trimmed.slice(0, -2)}:${trimmed.slice(-2)}`;
+  return `${trimmed.slice(0, -4)}:${trimmed.slice(-4, -2)}:${trimmed.slice(-2)}`;
+}
+
 export default function VideoDetail() {
   const { id = "" } = useParams();
   const { data, error } = useFetch(() => getVideo(Number(id)), [id]);
   const player = useRef<PlayerHandle>(null);
+  const timeInput = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<Category>("none");
   const [fav, setFav] = useState(false);
   const [memo, setMemo] = useState("");
@@ -56,9 +65,20 @@ export default function VideoDetail() {
     setMemoState("저장 중");
     try { await updateVideo(v.id, { memo }); v.memo = memo; setMemoState("저장했어요"); } catch (e) { setMemoState(errText(e)); }
   };
+  const insertColon = () => {
+    const input = timeInput.current;
+    const start = input?.selectionStart ?? time.length;
+    const end = input?.selectionEnd ?? time.length;
+    const next = `${time.slice(0, start)}:${time.slice(end)}`;
+    setTime(next);
+    requestAnimationFrame(() => {
+      input?.focus();
+      input?.setSelectionRange(start + 1, start + 1);
+    });
+  };
   const addStamp = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const sec = parseClock(time);
+    const sec = parseClock(normalizeClockInput(time));
     if (sec === null) { setMsg("시간은 12:34 또는 1:02:03 형식으로 적어 주세요"); return; }
     setMsg(""); setNotice("");
     try {
@@ -148,14 +168,16 @@ export default function VideoDetail() {
             {entryMode === "single" ? (
               <form onSubmit={addStamp} className="mt-4 space-y-3">
                 <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-                  <label className="block min-w-0">
-                    <span className="mb-1.5 block text-xs font-medium text-ink-2">재생 시간</span>
+                  <div className="min-w-0">
+                    <label htmlFor="stamp-time-input" className="mb-1.5 block text-xs font-medium text-ink-2">재생 시간</label>
                     <span className="relative block">
                       <Clock3 size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
-                      <input value={time} onChange={e => setTime(e.target.value.replace(/[^\d:]/g, ""))} aria-label="시간" placeholder="12:34" inputMode="text" maxLength={8} autoComplete="off"
-                        className="h-12 w-full rounded-xl border border-line-strong bg-field pl-10 pr-3 font-mono text-sm tabular-nums" />
+                      <input id="stamp-time-input" ref={timeInput} type="text" value={time} onChange={e => setTime(e.target.value.replace(/[^\d:]/g, ""))} aria-label="시간" placeholder="12:34" inputMode="text" maxLength={8} autoComplete="off" autoCapitalize="off" spellCheck={false}
+                        className="h-12 w-full rounded-xl border border-line-strong bg-field pl-10 pr-12 font-mono text-sm tabular-nums" />
+                      <button type="button" aria-label="콜론 입력" onPointerDown={e => e.preventDefault()} onClick={insertColon}
+                        className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg bg-ground-2 font-mono text-base font-semibold text-ink-2 active:bg-ground-3">:</button>
                     </span>
-                  </label>
+                  </div>
                   <button type="button" onClick={() => setTime(clock(player.current?.time() ?? 0))}
                     className="flex h-12 items-center gap-1.5 rounded-xl border border-line px-3 text-xs font-medium text-ink-2 hover:bg-ground-2">
                     <Play size={14} /> 현재 위치
@@ -169,6 +191,7 @@ export default function VideoDetail() {
                 <button type="submit" disabled={!time.trim()} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
                   <Plus size={17} /> 타임스탬프 추가
                 </button>
+                <p className="text-[11px] leading-relaxed text-ink-3">콜론을 직접 입력하거나, 숫자만 입력해도 자동 변환돼요. 예: 1234 → 12:34 · 10235 → 1:02:35</p>
               </form>
             ) : (
               <div className="mt-4">
@@ -177,7 +200,7 @@ export default function VideoDetail() {
                   rows={5} spellCheck={false} placeholder={'00:00\n03:25\n12:48\n1:02:35'}
                   className="min-h-32 w-full resize-y rounded-xl border border-line-strong bg-field p-3 font-mono text-sm leading-7 tabular-nums placeholder:font-mono placeholder:text-ink-3" />
                 <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-3">
-                  <span>줄바꿈, 공백, 쉼표로 구분해 붙여넣을 수 있어요.</span>
+                  <span>쉼표 없이 줄바꿈이나 공백만으로 붙여넣으면 돼요.</span>
                   <span className="font-medium tabular-nums text-ink-2">{parsedBulk.seconds.length}개 인식</span>
                 </div>
                 {bulkText.trim() && (

@@ -14,9 +14,12 @@ export function parseClock(text: string) {
   return parts.reduce((a, n) => a * 60 + n, 0);
 }
 
-/** 공백·줄바꿈·쉼표 등으로 구분된 mm:ss / h:mm:ss 목록을 초 단위로 변환한다. */
+/** 줄바꿈·스페이스 등 공백만으로 나열한 mm:ss / h:mm:ss 목록을 초 단위로 변환한다. */
 export function parseTimestampList(text: string) {
-  const tokens = text.split(/[\s,;，；|/]+/).filter(Boolean);
+  // 모바일/웹에서 복사할 때 섞일 수 있는 zero-width 문자를 먼저 제거한다.
+  const normalized = text.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
+  // 줄바꿈/스페이스만으로도 구분되며, 기존 쉼표 구분 입력도 선택적으로 허용한다.
+  const tokens = normalized ? normalized.split(/[\s,;，；|/]+/).filter(Boolean) : [];
   const seconds: number[] = [];
   const invalid: string[] = [];
 
