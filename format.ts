@@ -14,25 +14,22 @@ export function parseClock(text: string) {
   return parts.reduce((a, n) => a * 60 + n, 0);
 }
 
-/** 줄바꿈·스페이스 등 공백만으로 나열한 mm:ss / h:mm:ss 목록을 초 단위로 변환한다. */
+/** 공백·줄바꿈으로 붙여넣은 mm:ss / h:mm:ss 타임스탬프를 초 단위로 변환한다. */
 export function parseTimestampList(text: string) {
-  // 모바일/웹에서 복사할 때 섞일 수 있는 zero-width 문자를 먼저 제거한다.
   const normalized = text.replace(/[\u200B-\u200D\uFEFF]/g, "").trim();
-  // 줄바꿈/스페이스만으로도 구분되며, 기존 쉼표 구분 입력도 선택적으로 허용한다.
   const tokens = normalized ? normalized.split(/[\s,;，；|/]+/).filter(Boolean) : [];
   const seconds: number[] = [];
   const invalid: string[] = [];
 
   for (const token of tokens) {
-    if (!/^\d+:\d{1,2}(?::\d{1,2})?$/.test(token)) {
-      invalid.push(token);
-      continue;
+    const matches = token.match(/\d+:\d{1,2}(?::\d{1,2})?/g);
+    if (!matches) { invalid.push(token); continue; }
+    for (const match of matches) {
+      const parsed = parseClock(match);
+      if (parsed === null) invalid.push(match);
+      else seconds.push(parsed);
     }
-    const parsed = parseClock(token);
-    if (parsed === null) invalid.push(token);
-    else seconds.push(parsed);
   }
-
   return { seconds, invalid };
 }
 

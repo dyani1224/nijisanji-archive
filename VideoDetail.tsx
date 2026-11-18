@@ -1,35 +1,21 @@
-import { CheckCircle2, Clock3, ExternalLink, ListPlus, Play, Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useParams } from "react-router";
+import { ChevronLeft, Clock3, ExternalLink, ListPlus, Play, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Link, useParams } from "react-router";
 import Player, { type PlayerHandle } from "../components/Player";
-import { Avatar, BackButton, HeartButton, PageHead } from "../components/ui";
-import { ASSIGNABLE_CATEGORIES, createStamp, createStamps, CATEGORY_LABEL, deleteStamp, errText, getVideo, updateStamp, updateVideo, useFetch, type Category, type Stamp } from "../lib/client";
-import { clock, dateKo, parseClock, parseTimestampList } from "../lib/format";
-
-type StampEntryMode = "single" | "bulk";
-
-/** 모바일 숫자 키패드에서 콜론을 입력하지 못해도 숫자만으로 시간을 적을 수 있게 한다. */
-function normalizeClockInput(value: string) {
-  const trimmed = value.trim();
-  if (!/^\d+$/.test(trimmed) || trimmed.length <= 2) return trimmed;
-  if (trimmed.length <= 4) return `${trimmed.slice(0, -2)}:${trimmed.slice(-2)}`;
-  return `${trimmed.slice(0, -4)}:${trimmed.slice(-4, -2)}:${trimmed.slice(-2)}`;
-}
+import { Avatar, HeartButton, PageHead } from "../components/ui";
+import { ASSIGNABLE_CATEGORIES, createStamps, CATEGORY_LABEL, deleteStamp, errText, getVideo, updateStamp, updateVideo, useFetch, type Category, type Stamp } from "../lib/client";
+import { clock, dateKo, parseTimestampList } from "../lib/format";
 
 export default function VideoDetail() {
   const { id = "" } = useParams();
   const { data, error } = useFetch(() => getVideo(Number(id)), [id]);
   const player = useRef<PlayerHandle>(null);
-  const timeInput = useRef<HTMLInputElement>(null);
   const [category, setCategory] = useState<Category>("none");
   const [fav, setFav] = useState(false);
   const [memo, setMemo] = useState("");
   const [memoState, setMemoState] = useState("");
   const [stamps, setStamps] = useState<Stamp[]>([]);
   const [time, setTime] = useState("");
-  const [note, setNote] = useState("");
-  const [entryMode, setEntryMode] = useState<StampEntryMode>("single");
-  const [bulkText, setBulkText] = useState("");
   const [bulkSaving, setBulkSaving] = useState(false);
   const [msg, setMsg] = useState("");
   const [notice, setNotice] = useState("");
@@ -39,11 +25,11 @@ export default function VideoDetail() {
     setCategory(data.row.category); setFav(!!data.row.favorite); setMemo(data.row.memo); setStamps(data.timestamps);
   }, [data]);
 
-  const parsedBulk = useMemo(() => parseTimestampList(bulkText), [bulkText]);
+  const parsed = useMemo(() => parseTimestampList(time), [time]);
   const existingSeconds = useMemo(() => new Set(stamps.map(s => s.seconds)), [stamps]);
-  const readyBulkSeconds = useMemo(
-    () => [...new Set(parsedBulk.seconds)].filter(seconds => !existingSeconds.has(seconds)),
-    [parsedBulk.seconds, existingSeconds],
+  const readySeconds = useMemo(
+    () => [...new Set(parsed.seconds)].filter(seconds => !existingSeconds.has(seconds)),
+    [parsed.seconds, existingSeconds],
   );
 
   if (error) return <p role="alert" className="p-6 text-sm text-danger">{error}</p>;
@@ -65,41 +51,17 @@ export default function VideoDetail() {
     setMemoState("저장 중");
     try { await updateVideo(v.id, { memo }); v.memo = memo; setMemoState("저장했어요"); } catch (e) { setMemoState(errText(e)); }
   };
-  const insertColon = () => {
-    const input = timeInput.current;
-    const start = input?.selectionStart ?? time.length;
-    const end = input?.selectionEnd ?? time.length;
-    const next = `${time.slice(0, start)}:${time.slice(end)}`;
-    setTime(next);
-    requestAnimationFrame(() => {
-      input?.focus();
-      input?.setSelectionRange(start + 1, start + 1);
-    });
-  };
-  const addStamp = async (e: FormEvent<HTMLFormElement>) => {
-    e.preventDefault();
-    const sec = parseClock(normalizeClockInput(time));
-    if (sec === null) { setMsg("시간은 12:34 또는 1:02:03 형식으로 적어 주세요"); return; }
-    setMsg(""); setNotice("");
-    try {
-      const row = await createStamp(v.id, sec, note.trim());
-      setStamps(s => [...s, row].sort((a, b) => a.seconds - b.seconds || a.id - b.id));
-      setTime(""); setNote("");
-      setNotice("타임스탬프를 등록했어요.");
-    } catch (err) { setMsg(errText(err)); }
-  };
-  const addBulkStamps = async () => {
-    if (!readyBulkSeconds.length || bulkSaving) return;
-    const invalidCount = parsedBulk.invalid.length;
-    const duplicateCount = parsedBulk.seconds.length - readyBulkSeconds.length;
+  const addStamps = async () => {
+    if (!readySeconds.length || bulkSaving) return;
+    const duplicateCount = parsed.seconds.length - readySeconds.length;
     setBulkSaving(true); setMsg(""); setNotice("");
     try {
-      const rows = await createStamps(v.id, readyBulkSeconds);
+      const rows = await createStamps(v.id, readySeconds);
       setStamps(current => [...current, ...rows].sort((a, b) => a.seconds - b.seconds || a.id - b.id));
-      setBulkText("");
+      setTime("");
       const summary = [`${rows.length}개의 타임스탬프를 등록했어요.`];
       if (duplicateCount > 0) summary.push(`중복 ${duplicateCount}개는 건너뛰었어요.`);
-      if (invalidCount > 0) summary.push(`인식하지 못한 ${invalidCount}개 항목은 제외했어요.`);
+      if (parsed.invalid.length > 0) summary.push(`시간으로 인식하지 못한 ${parsed.invalid.length}개 항목은 제외했어요.`);
       setNotice(summary.join(" "));
     } catch (err) { setMsg(errText(err)); }
     finally { setBulkSaving(false); }
@@ -110,14 +72,13 @@ export default function VideoDetail() {
     catch (e) { setMsg(errText(e)); }
   };
   const removeStamp = async (s: Stamp) => {
-    try { await deleteStamp(s.id); setStamps(list => list.filter(x => x.id !== s.id)); }
-    catch (e) { setMsg(errText(e)); }
+    try { await deleteStamp(s.id); setStamps(list => list.filter(x => x.id !== s.id)); } catch (e) { setMsg(errText(e)); }
   };
 
   return (
     <>
       <PageHead
-        back={<BackButton fallback={`/livers/${v.liver_id}`} label="이전 페이지" />}
+        back={<Link to={`/livers/${v.liver_id}`} aria-label="라이버 페이지" className="-ml-2 grid h-10 w-10 place-items-center rounded-full hover:bg-ground-2"><ChevronLeft size={24} /></Link>}
         title={v.liver_name} />
       <div className="md:grid md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)] md:gap-8 md:px-8 md:pt-4">
         <div>
@@ -141,140 +102,75 @@ export default function VideoDetail() {
           </div>
         </div>
 
-        <div className="space-y-6 px-4 pt-6 md:px-0 md:pt-0">
-          <section className="rounded-2xl border border-line bg-surface p-4 shadow-sm md:p-5" aria-labelledby="timestamps-heading">
-            <div className="flex items-start justify-between gap-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span className="grid h-9 w-9 place-items-center rounded-xl bg-accent/10 text-accent"><Clock3 size={18} /></span>
-                  <h3 id="timestamps-heading" className="text-base font-semibold">타임스탬프</h3>
-                </div>
-                <p className="mt-2 text-xs text-ink-3">기억하고 싶은 장면의 시간을 저장해 두세요.</p>
+        <div className="px-4 pt-6 md:px-0 md:pt-0">
+          <section aria-labelledby="timestamps-heading">
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <Clock3 size={18} className="text-accent" />
+                <h3 id="timestamps-heading" className="text-sm font-semibold">타임스탬프</h3>
               </div>
-              <span className="rounded-full bg-ground-2 px-3 py-1 text-xs font-semibold tabular-nums text-ink-2">{stamps.length}개</span>
+              <span className="text-xs tabular-nums text-ink-3">{stamps.length}개 등록됨</span>
             </div>
-
-            <div className="mt-4 grid grid-cols-2 gap-1 rounded-xl bg-ground-2 p-1" role="group" aria-label="타임스탬프 등록 방식">
-              <button type="button" aria-pressed={entryMode === "single"} onClick={() => { setEntryMode("single"); setMsg(""); setNotice(""); }}
-                className={`flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors ${entryMode === "single" ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink-2"}`}>
-                <Clock3 size={15} /> 개별 등록
-              </button>
-              <button type="button" aria-pressed={entryMode === "bulk"} onClick={() => { setEntryMode("bulk"); setMsg(""); setNotice(""); }}
-                className={`flex h-10 items-center justify-center gap-2 rounded-lg text-sm font-medium transition-colors ${entryMode === "bulk" ? "bg-surface text-ink shadow-sm" : "text-ink-3 hover:text-ink-2"}`}>
-                <ListPlus size={16} /> 여러 개 붙여넣기
-              </button>
-            </div>
-
-            {entryMode === "single" ? (
-              <form onSubmit={addStamp} className="mt-4 space-y-3">
-                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-end gap-2">
-                  <div className="min-w-0">
-                    <label htmlFor="stamp-time-input" className="mb-1.5 block text-xs font-medium text-ink-2">재생 시간</label>
-                    <span className="relative block">
-                      <Clock3 size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
-                      <input id="stamp-time-input" ref={timeInput} type="text" value={time} onChange={e => setTime(e.target.value.replace(/[^\d:]/g, ""))} aria-label="시간" placeholder="12:34" maxLength={8} autoComplete="off" autoCapitalize="off" spellCheck={false}
-                        className="h-12 w-full rounded-xl border border-line-strong bg-field pl-10 pr-12 font-mono text-sm tabular-nums" />
-                      <button type="button" aria-label="콜론 입력" onPointerDown={e => e.preventDefault()} onClick={insertColon}
-                        className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg bg-ground-2 font-mono text-base font-semibold text-ink-2 active:bg-ground-3">:</button>
-                    </span>
-                  </div>
-                  <button type="button" onClick={() => setTime(clock(player.current?.time() ?? 0))}
-                    className="flex h-12 items-center gap-1.5 rounded-xl border border-line px-3 text-xs font-medium text-ink-2 hover:bg-ground-2">
-                    <Play size={14} /> 현재 위치
-                  </button>
-                </div>
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-medium text-ink-2">메모 <span className="font-normal text-ink-3">· 선택</span></span>
-                  <input value={note} onChange={e => setNote(e.target.value)} aria-label="메모" placeholder="예: 오프닝 시작, 좋아하는 장면" maxLength={500}
-                    className="h-12 w-full rounded-xl border border-line-strong bg-field px-3 text-sm" />
-                </label>
-                <button type="submit" disabled={!time.trim()} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-                  <Plus size={17} /> 타임스탬프 추가
-                </button>
-                <p className="text-[11px] leading-relaxed text-ink-3">일반 한글 키보드로 입력할 수 있어요. 예: 12:34 · 1:02:35</p>
-              </form>
-            ) : (
-              <div className="mt-4">
-                <label htmlFor="bulk-timestamps" className="mb-1.5 block text-xs font-medium text-ink-2">타임스탬프 목록</label>
-                <textarea id="bulk-timestamps" value={bulkText} onChange={e => { setBulkText(e.target.value); setMsg(""); setNotice(""); }}
-                  rows={5} spellCheck={false} placeholder={'00:00\n03:25\n12:48\n1:02:35'}
-                  className="min-h-32 w-full resize-y rounded-xl border border-line-strong bg-field p-3 font-mono text-sm leading-7 tabular-nums placeholder:font-mono placeholder:text-ink-3" />
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-3">
-                  <span>쉼표 없이 줄바꿈이나 공백만으로 붙여넣으면 돼요.</span>
-                  <span className="font-medium tabular-nums text-ink-2">{parsedBulk.seconds.length}개 인식</span>
-                </div>
-                {bulkText.trim() && (
-                  <div className="mt-3 rounded-xl bg-ground-2 p-3">
-                    <p className="text-xs font-semibold text-ink-2">등록 미리보기</p>
-                    {readyBulkSeconds.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        {readyBulkSeconds.slice(0, 16).map(seconds => (
-                          <span key={seconds} className="rounded-lg border border-line bg-surface px-2.5 py-1 font-mono text-xs tabular-nums text-ink-2">{clock(seconds)}</span>
-                        ))}
-                        {readyBulkSeconds.length > 16 && <span className="px-1 py-1 text-xs text-ink-3">외 {readyBulkSeconds.length - 16}개</span>}
-                      </div>
-                    ) : (
-                      <p className="mt-2 text-xs text-ink-3">새로 등록할 타임스탬프가 없어요.</p>
-                    )}
-                    {(parsedBulk.invalid.length > 0 || parsedBulk.seconds.length > readyBulkSeconds.length) && (
-                      <p className="mt-2 text-xs text-ink-3">
-                        {parsedBulk.seconds.length > readyBulkSeconds.length && `중복 ${parsedBulk.seconds.length - readyBulkSeconds.length}개는 건너뛰어요.`}
-                        {parsedBulk.invalid.length > 0 && ` 인식하지 못한 ${parsedBulk.invalid.length}개 항목은 등록하지 않아요.`}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <button type="button" onClick={addBulkStamps} disabled={!readyBulkSeconds.length || bulkSaving}
-                  className="mt-3 flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
-                  <ListPlus size={17} /> {bulkSaving ? "등록 중…" : `${readyBulkSeconds.length}개 한꺼번에 등록`}
-                </button>
+            <div className="mt-2 space-y-2">
+              <label htmlFor="timestamp-list" className="block text-xs font-medium text-ink-2">시간 입력 또는 여러 개 붙여넣기</label>
+              <textarea id="timestamp-list" value={time}
+                onChange={e => { setTime(e.target.value); setMsg(""); setNotice(""); }}
+                rows={4} autoComplete="off" autoCapitalize="off" spellCheck={false}
+                placeholder={'00:00\n03:25\n12:48\n1:02:35'}
+                className="min-h-28 w-full resize-y rounded-control border border-line-strong bg-field p-3 font-mono text-sm leading-7 tabular-nums placeholder:text-ink-3" />
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-3">
+                <span>한 개만 입력하거나, 줄바꿈·띄어쓰기로 여러 개를 붙여넣으세요.</span>
+                <span className="font-medium tabular-nums text-ink-2">{parsed.seconds.length}개 인식</span>
               </div>
-            )}
-
-            {msg && <p role="alert" className="mt-3 text-sm text-danger">{msg}</p>}
-            {notice && <p role="status" className="mt-3 flex items-start gap-1.5 text-xs leading-relaxed text-ok"><CheckCircle2 size={15} className="mt-0.5 shrink-0" />{notice}</p>}
-
-            <div className="mt-5 border-t border-line pt-4">
-              <div className="flex items-center justify-between gap-2">
-                <h4 className="text-sm font-semibold">등록된 시간</h4>
-                <span className="text-xs tabular-nums text-ink-3">{stamps.length}개</span>
-              </div>
-              {stamps.length === 0 ? (
-                <div className="mt-3 rounded-xl border border-dashed border-line-strong px-3 py-7 text-center">
-                  <Clock3 size={20} className="mx-auto text-ink-3" />
-                  <p className="mt-2 text-sm font-medium text-ink-2">아직 등록된 시간이 없어요.</p>
-                  <p className="mt-1 text-xs text-ink-3">시간만 먼저 저장하고 메모는 나중에 추가해도 돼요.</p>
+              {time.trim() && (
+                <div className="rounded-xl bg-ground-2 p-3">
+                  <p className="text-xs font-semibold text-ink-2">등록 미리보기</p>
+                  {readySeconds.length > 0 ? (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {readySeconds.slice(0, 20).map(seconds => (
+                        <span key={seconds} className="rounded-lg border border-line bg-surface px-2.5 py-1 font-mono text-xs tabular-nums text-ink-2">{clock(seconds)}</span>
+                      ))}
+                      {readySeconds.length > 20 && <span className="px-1 py-1 text-xs text-ink-3">외 {readySeconds.length - 20}개</span>}
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-xs text-ink-3">새로 등록할 시간이 없어요.</p>
+                  )}
+                  {parsed.invalid.length > 0 && <p className="mt-2 text-xs text-ink-3">인식하지 못한 항목 {parsed.invalid.length}개는 제외돼요.</p>}
                 </div>
-              ) : (
-                <ul className="mt-3 space-y-2">
-                  {stamps.map(s => (
-                    <li key={s.id} className="flex min-w-0 items-center gap-2 rounded-xl border border-line bg-ground px-2 py-2">
-                      <button type="button" onClick={() => player.current?.seek(s.seconds)} aria-label={`${clock(s.seconds)} 재생하기`}
-                        className="flex h-10 min-w-[82px] shrink-0 items-center justify-center gap-1.5 rounded-lg bg-accent/10 px-2 font-mono text-sm font-semibold tabular-nums text-accent hover:bg-accent/15">
-                        <Play size={12} fill="currentColor" /> {clock(s.seconds)}
-                      </button>
-                      <input key={`${s.id}-${s.note}`} defaultValue={s.note} aria-label={`${clock(s.seconds)} 메모`} placeholder="메모 추가 (선택)" maxLength={500}
-                        onBlur={e => editNote(s, e.target.value.trim())}
-                        className="h-10 min-w-0 flex-1 rounded-lg border border-transparent bg-transparent px-2 text-sm placeholder:text-ink-3 hover:border-line focus:border-line-strong focus:bg-field" />
-                      <button type="button" onClick={() => removeStamp(s)} aria-label={`${clock(s.seconds)} 삭제`}
-                        className="grid h-9 w-9 shrink-0 place-items-center rounded-lg text-ink-3 hover:bg-ground-2 hover:text-danger"><Trash2 size={16} /></button>
-                    </li>
-                  ))}
-                </ul>
               )}
-              {stamps.length > 0 && <p className="mt-2 text-[11px] text-ink-3">시간을 누르면 해당 장면으로 이동하고, 메모 칸은 언제든 수정할 수 있어요.</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={() => { setTime(clock(player.current?.time() ?? 0)); setMsg(""); setNotice(""); }}
+                  className="flex h-11 shrink-0 items-center gap-1.5 rounded-control border border-line px-3 text-xs font-medium text-ink-2 hover:bg-ground-2">
+                  <Play size={14} /> 현재 위치
+                </button>
+                <button type="button" onClick={addStamps} disabled={!readySeconds.length || bulkSaving}
+                  className="flex h-11 min-w-0 flex-1 items-center justify-center gap-2 rounded-control bg-accent px-4 text-sm font-semibold text-on-accent disabled:cursor-not-allowed disabled:opacity-40">
+                  <ListPlus size={17} /> {bulkSaving ? "등록 중…" : `${readySeconds.length}개 한꺼번에 등록`}
+                </button>
+              </div>
             </div>
+            {msg && <p role="alert" className="mt-2 text-sm text-danger">{msg}</p>}
+            {notice && <p role="status" className="mt-2 text-xs text-ok">{notice}</p>}
+            {stamps.length === 0 && <p className="mt-3 text-sm text-ink-3">기록한 타임스탬프가 없어요.</p>}
+            <ul className="mt-2 divide-y divide-line">
+              {stamps.map(s => (
+                <li key={s.id} className="flex items-center gap-2 py-1.5">
+                  <button type="button" onClick={() => player.current?.seek(s.seconds)} className="h-10 w-20 shrink-0 rounded-control text-left font-medium tabular-nums text-accent hover:underline">{clock(s.seconds)}</button>
+                  <input key={`${s.id}-${s.note}`} defaultValue={s.note} aria-label={`${clock(s.seconds)} 메모`} placeholder="메모 추가 (선택)" maxLength={500} onBlur={e => editNote(s, e.target.value.trim())}
+                    className="h-10 min-w-0 flex-1 rounded-control border border-transparent bg-transparent px-2 hover:border-line focus:border-line-strong" />
+                  <button type="button" onClick={() => removeStamp(s)} aria-label="삭제" className="grid h-10 w-10 shrink-0 place-items-center rounded-full text-ink-3 hover:bg-ground-2"><Trash2 size={16} /></button>
+                </li>
+              ))}
+            </ul>
           </section>
 
-          <section aria-labelledby="memo-heading">
-            <h3 id="memo-heading" className="text-sm font-semibold">감상 메모</h3>
-            <textarea value={memo} onChange={e => { setMemo(e.target.value); setMemoState(""); }} onBlur={saveMemo} rows={6} aria-label="감상 메모"
-              className="mt-2 w-full rounded-control border border-line-strong bg-field p-3 leading-relaxed" />
-            <div className="mt-2 flex items-center gap-3">
-              <button type="button" onClick={saveMemo} className="h-control rounded-control border border-line px-4 text-sm hover:bg-ground-2">저장</button>
-              <span role="status" className="text-sm text-ink-2">{memoState}</span>
-            </div>
-          </section>
+          <h3 className="mt-6 text-sm font-semibold">감상 메모</h3>
+          <textarea value={memo} onChange={e => { setMemo(e.target.value); setMemoState(""); }} onBlur={saveMemo} rows={6} aria-label="감상 메모"
+            className="mt-2 w-full rounded-control border border-line-strong bg-field p-3 leading-relaxed" />
+          <div className="mt-2 flex items-center gap-3">
+            <button type="button" onClick={saveMemo} className="h-control rounded-control border border-line px-4 text-sm hover:bg-ground-2">저장</button>
+            <span role="status" className="text-sm text-ink-2">{memoState}</span>
+          </div>
         </div>
       </div>
     </>
