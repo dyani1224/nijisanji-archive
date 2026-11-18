@@ -172,7 +172,7 @@ export default function VideoDetail() {
                     <label htmlFor="stamp-time-input" className="mb-1.5 block text-xs font-medium text-ink-2">재생 시간</label>
                     <span className="relative block">
                       <Clock3 size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-ink-3" />
-                      <input id="stamp-time-input" ref={timeInput} type="text" value={time} onChange={e => setTime(e.target.value.replace(/[^\d:]/g, ""))} aria-label="시간" placeholder="12:34" inputMode="text" maxLength={8} autoComplete="off" autoCapitalize="off" spellCheck={false}
+                      <input id="stamp-time-input" ref={timeInput} type="text" value={time} onChange={e => setTime(e.target.value.replace(/[^\d:]/g, ""))} aria-label="시간" placeholder="12:34" maxLength={8} autoComplete="off" autoCapitalize="off" spellCheck={false}
                         className="h-12 w-full rounded-xl border border-line-strong bg-field pl-10 pr-12 font-mono text-sm tabular-nums" />
                       <button type="button" aria-label="콜론 입력" onPointerDown={e => e.preventDefault()} onClick={insertColon}
                         className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-lg bg-ground-2 font-mono text-base font-semibold text-ink-2 active:bg-ground-3">:</button>
@@ -191,7 +191,7 @@ export default function VideoDetail() {
                 <button type="submit" disabled={!time.trim()} className="flex h-11 w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 text-sm font-semibold text-on-accent transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
                   <Plus size={17} /> 타임스탬프 추가
                 </button>
-                <p className="text-[11px] leading-relaxed text-ink-3">콜론을 직접 입력하거나, 숫자만 입력해도 자동 변환돼요. 예: 1234 → 12:34 · 10235 → 1:02:35</p>
+                <p className="text-[11px] leading-relaxed text-ink-3">일반 한글 키보드로 입력할 수 있어요. 예: 12:34 · 1:02:35</p>
               </form>
             ) : (
               <div className="mt-4">
