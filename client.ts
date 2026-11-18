@@ -485,6 +485,23 @@ export async function createStamp(videoId: number, seconds: number, note: string
   });
 }
 
+/** 여러 타임스탬프를 한 번의 저장 트랜잭션으로 등록한다. 기존 시간과 입력 내 중복은 건너뛴다. */
+export async function createStamps(videoId: number, secondsList: number[]): Promise<Stamp[]> {
+  if (secondsList.some(seconds => !Number.isSafeInteger(seconds) || seconds < 0)) {
+    throw new Error("타임스탬프 시간이 올바르지 않아요.");
+  }
+  return modifyArchive(archive => {
+    if (!archive.videos.some(v => v.id === videoId)) throw new Error("없는 영상이에요");
+    const existing = new Set(archive.timestamps.filter(s => s.video_id === videoId).map(s => s.seconds));
+    const unique = [...new Set(secondsList)].filter(seconds => !existing.has(seconds));
+    const rows: StampRecord[] = unique.map(seconds => ({
+      id: archive.nextId.stamp++, video_id: videoId, seconds, note: "",
+    }));
+    archive.timestamps.push(...rows);
+    return rows.map(row => ({ id: row.id, seconds: row.seconds, note: row.note }));
+  });
+}
+
 export async function updateStamp(id: number, note: string) {
   await modifyArchive(archive => {
     const stamp = archive.timestamps.find(s => s.id === id);

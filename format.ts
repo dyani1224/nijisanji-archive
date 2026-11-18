@@ -14,6 +14,25 @@ export function parseClock(text: string) {
   return parts.reduce((a, n) => a * 60 + n, 0);
 }
 
+/** 공백·줄바꿈·쉼표 등으로 구분된 mm:ss / h:mm:ss 목록을 초 단위로 변환한다. */
+export function parseTimestampList(text: string) {
+  const tokens = text.split(/[\s,;，；|/]+/).filter(Boolean);
+  const seconds: number[] = [];
+  const invalid: string[] = [];
+
+  for (const token of tokens) {
+    if (!/^\d+:\d{1,2}(?::\d{1,2})?$/.test(token)) {
+      invalid.push(token);
+      continue;
+    }
+    const parsed = parseClock(token);
+    if (parsed === null) invalid.push(token);
+    else seconds.push(parsed);
+  }
+
+  return { seconds, invalid };
+}
+
 export function dateKo(iso: string) {
   const d = new Date(iso);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
